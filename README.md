@@ -7,6 +7,12 @@ top.
 You give it one thing, a Google Maps directions link. It writes a trip file you can edit (title,
 dates, nights at each stop, theme, size…), and then draws the poster.
 
+Inspired by [maptoposter](https://github.com/originalankur/maptoposter) by Ankur Gupta.
+
+| Spiti Valley (terracotta) | Ladakh (midnight blue) |
+|---|---|
+| ![Spiti Valley poster in the terracotta theme](images/spiti_terracotta.jpg) | ![Ladakh poster in the midnight blue theme](images/ladakh_midnight_blue.jpg) |
+
 ## 1. Install (once)
 
 You need Python 3.10 or newer.
