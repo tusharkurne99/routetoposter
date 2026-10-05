@@ -1,0 +1,14 @@
+.venv/
+__pycache__/
+*.egg-info/
+.pytest_cache/
+
+# Downloaded map data and generated posters (rebuilt on demand)
+cache/
+posters/
+
+# Your own trip files (see examples/ for committed ones)
+trips/
+
+# Local notes (design plan, code walkthrough)
+docs/

@@ -1,0 +1,95 @@
+# RouteToPoster trip file. Edit anything below, then run:
+#   routetoposter preview trips/ladakh.yaml     (quick low-resolution check)
+#   routetoposter make trips/ladakh.yaml        (the final poster)
+
+# ── Text on the poster ───────────────────────────────────────────────
+title: Ladakh Expedition
+subtitle: Along Zanskar and Shyok rivers             # auto = the places you stayed at; or your own text; "" = none
+dates:                     # free text, e.g. 27 Dec 2026 – 1 Jan 2027; "" = not shown
+# days: 6                 # optional; normally total nights + 1
+
+# ── Look ─────────────────────────────────────────────────────────────
+theme: terracotta          # autumn, blueprint, contrast_zones, copper_patina, emerald, forest, gradient_roads, japanese_ink, midnight_blue, monochrome_blue, neon_cyberpunk, noir, ocean, pastel_dream, sunset, terracotta, warm_beige
+size: 12x16                # 8x10 | 12x16 | 18x24 | 24x36 | A4 | A3 | A2 | instagram | phone | wallpaper
+orientation: portrait      # portrait | landscape
+dpi: 300                   # 150 = screen, 300 = print, 600 = big print (ignored for pixel sizes)
+format: png                # png | pdf | svg
+map_detail: auto           # auto | more | less  (how many small roads are drawn)
+route: driving             # driving = follow the roads; straight = straight lines between stops
+
+# ── Stops ────────────────────────────────────────────────────────────
+# nights: nights you slept there (0 = passed through or visited).
+# sights_nearby: places you saw around this stop. Each one is either
+#     - Key Monastery                               (found in OpenStreetMap near the stop)
+#     - {name: Key Monastery, kind: monastery}      (also choose the symbol)
+#     - {name: Key Monastery, lat: 32.29, lon: 78.01}   (exact spot, no lookup)
+#   kinds: monastery, temple, church, mosque, fort, palace, viewpoint, waterfall, lake, beach, lighthouse, peak, park, museum, hot_spring, dam, sight
+# label: false hides the name; via: true only shapes the route (no marker, no name).
+# lat / lon come from the Google Maps link; leave them as they are.
+stops:
+  - name: Leh              # Leh, 194101
+    nights: 1
+    sights_nearby: []
+    lat: 34.1525864
+    lon: 77.5770535
+  - name: Khardung La      # Khardung La, 194401
+    nights: 0
+    sights_nearby: []
+    lat: 34.2787271
+    lon: 77.6046756
+  - name: Nubra Valley     # Nubra Valley, HG2W+7FX, Diskit, 194401
+    nights: 1
+    sights_nearby: []
+    lat: 34.5507148
+    lon: 77.5462708
+  - name: Pangong Tso      # Pangong Tso
+    nights: 1
+    sights_nearby: []
+    lat: 33.7595131
+    lon: 78.6674404
+  - name: Chushul          # Chushul, 194101
+    nights: 0
+    sights_nearby: [Rezang La]
+    lat: 33.6028996
+    lon: 78.6560857
+  - name: Hanle Leh        # Hanle Leh, Q2R2+83H, Hanle, Ladakh 194202
+    nights: 2
+    sights_nearby: [Umling La]
+    lat: 32.790808
+    lon: 79.0002221
+  - name: Thiksey Monastery # Thiksey Monastery, Thiksey, Ladakh 194201
+    nights: 0
+    sights_nearby: []
+    lat: 34.0559137
+    lon: 77.6677625
+  - name: Leh              # Leh, 194101
+    nights: 1
+    sights_nearby: []
+    lat: 34.1525864
+    lon: 77.5770535
+
+# ── Route (worked out from the link; for your information only) ──────
+#   Leh → Khardung La                  40 km   ~0h 45m
+#   Khardung La → Nubra Valley         74 km   ~1h 41m
+#   Nubra Valley → Pangong Tso        335 km   ~7h 16m
+#   Pangong Tso → Chushul             151 km   ~3h 50m   ⚠ see below
+#   Chushul → Hanle Leh               116 km   ~2h 57m
+#   Hanle Leh → Thiksey Monastery     238 km   ~5h 03m
+#   Thiksey Monastery → Leh            19 km   ~0h 30m
+#   Total 974 km · loop (starts and ends in Leh)
+#   ⚠ Pangong Tso → Chushul: 151 km by road but only 17 km apart. The router probably doesn't know the road Google uses. Compare with Google Maps; if it's wrong, pick a nearby stop on a main road, or set route: straight.
+
+# ── What to draw ────────────────────────────────────────────────────
+show:
+  stop_labels: true        # names next to the stops (with altitude and nights)
+  altitudes: true          # stop altitudes and the highest point
+  passes: true             # ▲ mountain passes on the route
+  sights: true             # your sights_nearby
+  auto_sights: false       # also add well-known sights found along the route
+  water_names: true        # river and lake names
+  scale_bar: true          # scale bar and north arrow
+  arrows: true             # direction arrows inside the route line
+  stats: true              # the distance · days · passes · highest point line
+
+# The Google Maps link these stops came from (kept for reference; not read again):
+link: https://www.google.com/maps/dir/Leh,+194101/Khardung+La,+194401/Nubra+Valley,+HG2W%2B7FX,+Diskit,+194401/Pangong+Tso/Chushul,+194101/Hanle+Leh,+Q2R2%2B83H,+Hanle,+Ladakh+194202/Thiksey+Monastery,+Thiksey,+Ladakh+194201/Leh,+194101/@33.6630407,76.9567147,8z/data=!4m50!4m49!1m5!1m1!1s0x38fdeb21445fed85:0xd1bb09975086f710!2m2!1d77.5770535!2d34.1525864!1m5!1m1!1s0x38fdc0fef3b9c14b:0x37ec5dd55776d9f1!2m2!1d77.6046756!2d34.2787271!1m5!1m1!1s0x38fdb558fd192a0d:0xb3272c87133615c2!2m2!1d77.5462708!2d34.5507148!1m5!1m1!1s0x39002d69b6082a97:0xb7ba17e3c8c016a9!2m2!1d78.6674404!2d33.7595131!1m5!1m1!1s0x3901b532337488c5:0x84627a6d23c0b9cd!2m2!1d78.6560857!2d33.6028996!1m5!1m1!1s0x3900c70076170c99:0xbef268d66df52e11!2m2!1d79.0002221!2d32.790808!1m5!1m1!1s0x38fdf1e497c37b1b:0xfc0ddd49e1b9fa4a!2m2!1d77.6677625!2d34.0559137!1m5!1m1!1s0x38fdeb21445fed85:0xd1bb09975086f710!2m2!1d77.5770535!2d34.1525864!3e0?authuser=0&entry=ttu&g_ep=EgoyMDI2MDkzMC4wIKXMDSoASAFQAw%3D%3D

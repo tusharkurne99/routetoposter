@@ -1,0 +1,106 @@
+# RouteToPoster trip file. Edit anything below, then run:
+#   routetoposter preview trips/spiti.yaml     (quick low-resolution check)
+#   routetoposter make trips/spiti.yaml        (the final poster)
+
+# ── Text on the poster ───────────────────────────────────────────────
+title: Spiti Valley Expedition
+subtitle: auto             # auto = the places you stayed at; or your own text; "" = none
+dates:                     # free text, e.g. 27 Dec 2026 – 1 Jan 2027; "" = not shown
+# days: 6               # optional; normally total nights + 1
+
+# ── Look ─────────────────────────────────────────────────────────────
+theme: terracotta          # autumn, blueprint, contrast_zones, copper_patina, emerald, forest, gradient_roads, japanese_ink, midnight_blue, monochrome_blue, neon_cyberpunk, noir, ocean, pastel_dream, sunset, terracotta, warm_beige
+size: 12x16                # 8x10 | 12x16 | 18x24 | 24x36 | A4 | A3 | A2 | instagram | phone | wallpaper
+orientation: portrait      # portrait | landscape
+dpi: 300                   # 150 = screen, 300 = print, 600 = big print (ignored for pixel sizes)
+format: png                # png | pdf | svg
+map_detail: auto           # auto | more | less  (how many small roads are drawn)
+route: driving             # driving = follow the roads; straight = straight lines between stops
+
+# ── Stops ────────────────────────────────────────────────────────────
+# nights: nights you slept there (0 = passed through or visited).
+# sights_nearby: places you saw around this stop. Each one is either
+#     - Key Monastery                               (found in OpenStreetMap near the stop)
+#     - {name: Key Monastery, kind: monastery}      (also choose the symbol)
+#     - {name: Key Monastery, lat: 32.29, lon: 78.01}   (exact spot, no lookup)
+#   kinds: monastery, temple, church, mosque, fort, palace, viewpoint, waterfall, lake, beach, lighthouse, peak, park, museum, hot_spring, dam, sight
+# label: false hides the name; via: true only shapes the route (no marker, no name).
+# lat / lon come from the Google Maps link; leave them as they are.
+stops:
+  - name: Manali           # Manali, Himachal Pradesh
+    nights: 1
+    sights_nearby: []
+    lat: 32.2431872
+    lon: 77.1891761
+  - name: Shoja Valley     # Shoja Valley Home Stay, H99C+M69, Shoja, Himachal Pradesh 175123
+    nights: 1
+    sights_nearby: []
+    lat: 31.5691686
+    lon: 77.3706104
+  - name: Chitkul          # Chitkul, Himachal Pradesh 172106
+    nights: 1
+    sights_nearby: []
+    lat: 31.3507872
+    lon: 78.4366266
+  - name: Kalpa            # Kalpa, Himachal Pradesh
+    nights: 1
+    sights_nearby: []
+    lat: 31.5389997
+    lon: 78.2518863
+  - name: Tabo             # Tabo, Himachal Pradesh 172113
+    nights: 1
+    sights_nearby: []
+    lat: 32.0932586
+    lon: 78.3856447
+  - name: Hikkim           # Hikkim Post Office, Spiti taluk of, Kaza, Dhar Lung Wooh, Himachal Pradesh 172114
+    nights: 0
+    sights_nearby: []
+    lat: 32.2471327
+    lon: 78.09991
+  - name: Langza           # Langza, Himachal Pradesh 172114
+    nights: 1
+    sights_nearby: []
+    lat: 32.2738394
+    lon: 78.0815953
+  - name: Kaza             # Kaza, Himachal Pradesh 172114
+    nights: 1
+    sights_nearby: []
+    lat: 32.2275991
+    lon: 78.0709903
+  - name: Chandratal Lake  # Chandratal Lake Outpost - Chhatru, 897C+QR, Chhatru, Himachal Pradesh 175140
+    nights: 1
+    sights_nearby: []
+    lat: 32.3144121
+    lon: 77.3721227
+  - name: Manali           # Manali, Himachal Pradesh
+    nights: 1
+    sights_nearby: []
+    lat: 32.2431872
+    lon: 77.1891761
+
+# ── Route (worked out from the link; for your information only) ──────
+#   Manali → Shoja Valley        110 km   ~1h 38m
+#   Shoja Valley → Chitkul       208 km   ~4h 34m
+#   Chitkul → Kalpa               72 km   ~1h 11m
+#   Kalpa → Tabo                 170 km   ~2h 04m
+#   Tabo → Hikkim                 63 km   ~0h 57m
+#   Hikkim → Langza               11 km   ~0h 22m
+#   Langza → Kaza                 17 km   ~0h 22m
+#   Kaza → Chandratal Lake       118 km   ~6h 16m
+#   Chandratal Lake → Manali      64 km   ~1h 04m
+#   Total 833 km · loop (starts and ends in Manali)
+
+# ── What to draw ────────────────────────────────────────────────────
+show:
+  stop_labels: true        # names next to the stops (with altitude and nights)
+  altitudes: true          # stop altitudes and the highest point
+  passes: true             # ▲ mountain passes on the route
+  sights: true             # your sights_nearby
+  auto_sights: true        # also add well-known sights found along the route
+  water_names: true        # river and lake names
+  scale_bar: true          # scale bar and north arrow
+  arrows: true             # direction arrows inside the route line
+  stats: true              # the distance · days · passes · highest point line
+
+# The Google Maps link these stops came from (kept for reference; not read again):
+link: https://www.google.com/maps/dir/Manali,+Himachal+Pradesh/Shoja+Valley+Home+Stay,+H99C%2BM69,+Shoja,+Himachal+Pradesh+175123/Chitkul,+Himachal+Pradesh+172106/Kalpa,+Himachal+Pradesh/Tabo,+Himachal+Pradesh+172113/Hikkim+Post+Office,+Spiti+taluk+of,+Kaza,+Dhar+Lung+Wooh,+Himachal+Pradesh+172114/Langza,+Himachal+Pradesh+172114/Kaza,+Himachal+Pradesh+172114/Chandratal+Lake+Outpost+-+Chhatru,+897C%2BQR,+Chhatru,+Himachal+Pradesh+175140/Manali,+Himachal+Pradesh/@31.8895174,76.6051984,8.05z/data=!4m62!4m61!1m5!1m1!1s0x39048708163fd03f:0x8129a80ebe5076cd!2m2!1d77.1891761!2d32.2431872!1m5!1m1!1s0x3905afdd61be09a7:0x7e484fedd89d4bc1!2m2!1d77.3706104!2d31.5691686!1m5!1m1!1s0x39063a348d7e8a7d:0x94117ad4b7290d88!2m2!1d78.4366266!2d31.3507872!1m5!1m1!1s0x39066a2a311bb81d:0x60fde22c129d5588!2m2!1d78.2518863!2d31.5389997!1m5!1m1!1s0x3906ebffb11edee5:0x7bff063fe6575975!2m2!1d78.3856447!2d32.0932586!1m5!1m1!1s0x3906a4a88658055b:0xed4cd1235a99a544!2m2!1d78.09991!2d32.2471327!1m5!1m1!1s0x3906a4e59301f0e7:0xad4481873b35bf61!2m2!1d78.0815953!2d32.2738394!1m5!1m1!1s0x3906a374a0af9f8b:0x6ec85005a1175d47!2m2!1d78.0709903!2d32.2275991!1m5!1m1!1s0x39047b007181072d:0x13050273e9b16e7e!2m2!1d77.3721227!2d32.3144121!1m5!1m1!1s0x39048708163fd03f:0x8129a80ebe5076cd!2m2!1d77.1891761!2d32.2431872!3e0?entry=ttu

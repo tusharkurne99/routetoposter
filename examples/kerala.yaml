@@ -1,0 +1,95 @@
+# RouteToPoster trip file. Edit anything below, then run:
+#   routetoposter preview trips/kerala.yaml     (quick low-resolution check)
+#   routetoposter make trips/kerala.yaml        (the final poster)
+
+# ── Text on the poster ───────────────────────────────────────────────
+title: Kerala
+subtitle: auto             # auto = the places you stayed at; or your own text; "" = none
+dates:                     # free text, e.g. 27 Dec 2026 – 1 Jan 2027; "" = not shown
+# days: 6                 # optional; normally total nights + 1
+
+# ── Look ─────────────────────────────────────────────────────────────
+theme: terracotta          # autumn, blueprint, contrast_zones, copper_patina, emerald, forest, gradient_roads, japanese_ink, midnight_blue, monochrome_blue, neon_cyberpunk, noir, ocean, pastel_dream, sunset, terracotta, warm_beige
+size: 12x16                # 8x10 | 12x16 | 18x24 | 24x36 | A4 | A3 | A2 | instagram | phone | wallpaper
+orientation: portrait      # portrait | landscape
+dpi: 300                   # 150 = screen, 300 = print, 600 = big print (ignored for pixel sizes)
+format: png                # png | pdf | svg
+map_detail: auto           # auto | more | less  (how many small roads are drawn)
+route: driving             # driving = follow the roads; straight = straight lines between stops
+
+# ── Stops ────────────────────────────────────────────────────────────
+# nights: nights you slept there (0 = passed through or visited).
+# sights_nearby: places you saw around this stop. Each one is either
+#     - Key Monastery                               (found in OpenStreetMap near the stop)
+#     - {name: Key Monastery, kind: monastery}      (also choose the symbol)
+#     - {name: Key Monastery, lat: 32.29, lon: 78.01}   (exact spot, no lookup)
+#   kinds: monastery, temple, church, mosque, fort, palace, viewpoint, waterfall, lake, beach, lighthouse, peak, park, museum, hot_spring, dam, sight
+# label: false hides the name; via: true only shapes the route (no marker, no name).
+# lat / lon come from the Google Maps link; leave them as they are.
+stops:
+  - name: Bengaluru        # Bengaluru, Karnataka
+    nights: 0
+    sights_nearby: []
+    lat: 12.9628957
+    lon: 77.57754
+  - name: Palakkad         # Palakkad, Keralam
+    nights: 0
+    sights_nearby: []
+    lat: 10.7733121
+    lon: 76.6580401
+  - name: Thrissur         # Thrissur, Keralam
+    nights: 1
+    sights_nearby: []
+    lat: 10.5241176
+    lon: 76.2120649
+  - name: Kochi            # Kochi, Keralam
+    nights: 0
+    sights_nearby: []
+    lat: 9.9312328
+    lon: 76.2673041
+  - name: Alappuzha        # Alappuzha, Keralam
+    nights: 1
+    sights_nearby: []
+    lat: 9.4980667
+    lon: 76.3388484
+  - name: Changanassery    # Changanassery, Keralam
+    nights: 1
+    sights_nearby: []
+    lat: 9.4464941
+    lon: 76.5402167
+  - name: Munnar           # Munnar, Keralam 685612
+    nights: 1
+    sights_nearby: []
+    lat: 10.0889333
+    lon: 77.0595248
+  - name: Bengaluru        # Bengaluru, Karnataka
+    nights: 0
+    sights_nearby: []
+    lat: 12.9628957
+    lon: 77.57754
+
+# ── Route (worked out from the link; for your information only) ──────
+#   Bengaluru → Palakkad          377 km   ~5h 08m
+#   Palakkad → Thrissur            67 km   ~1h 05m
+#   Thrissur → Kochi               85 km   ~1h 23m
+#   Kochi → Alappuzha              55 km   ~0h 53m
+#   Alappuzha → Changanassery      28 km   ~0h 27m
+#   Changanassery → Munnar        145 km   ~2h 35m
+#   Munnar → Bengaluru            431 km   ~6h 56m
+#   Total 1,188 km · loop (starts and ends in Bengaluru)
+#   ⚠ OSRM couldn't use the roads at Bengaluru. Routed each leg on its own instead.
+
+# ── What to draw ────────────────────────────────────────────────────
+show:
+  stop_labels: true        # names next to the stops (with altitude and nights)
+  altitudes: true          # stop altitudes and the highest point
+  passes: true             # ▲ mountain passes on the route
+  sights: true             # your sights_nearby
+  auto_sights: false       # also add well-known sights found along the route
+  water_names: true        # river and lake names
+  scale_bar: true          # scale bar and north arrow
+  arrows: true             # direction arrows inside the route line
+  stats: true              # the distance · days · passes · highest point line
+
+# The Google Maps link these stops came from (kept for reference; not read again):
+link: https://www.google.com/maps/dir/Bengaluru,+Karnataka/Palakkad,+Keralam/Thrissur,+Keralam/Kochi,+Keralam/Alappuzha,+Keralam/Changanassery,+Keralam/Munnar,+Keralam+685612/Bengaluru,+Karnataka/@11.3754692,74.7026142,7.29z/data=!4m50!4m49!1m5!1m1!1s0x3bae1670c9b44e6d:0xf8dfc3e8517e4fe0!2m2!1d77.57754!2d12.9628957!1m5!1m1!1s0x3ba86dfa087d31ad:0xf542d6eb7a870a56!2m2!1d76.6580401!2d10.7733121!1m5!1m1!1s0x3ba7ee15ed42d1bb:0x82e45aa016ca7db!2m2!1d76.2120649!2d10.5241176!1m5!1m1!1s0x3b080d514abec6bf:0xbd582caa5844192!2m2!1d76.2673041!2d9.9312328!1m5!1m1!1s0x3b0884f1aa296b61:0xb84764552c41f85a!2m2!1d76.3388484!2d9.4980667!1m5!1m1!1s0x3b06260b6892c327:0x86c67c02aad04a0!2m2!1d76.5402167!2d9.4464941!1m5!1m1!1s0x3b0799794d099a6d:0x63250e5553c7e0c!2m2!1d77.0595248!2d10.0889333!1m5!1m1!1s0x3bae1670c9b44e6d:0xf8dfc3e8517e4fe0!2m2!1d77.57754!2d12.9628957!3e0?entry=ttu&g_ep=EgoyMDI2MDkzMC4wIKXMDSoASAFQAw%3D%3D
