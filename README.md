@@ -47,8 +47,7 @@ It asks you to paste the link: paste it and press Enter. It then:
 - saves `trips/ladakh.yaml` and prints it.
 
 You can also put the link on the command line, but then wrap it in **single quotes**:
-`new 'https://www.google.com/maps/dir/…' -o trips/ladakh.yaml`. Inside double quotes, bash changes
-the link's `!` characters and the stop positions are lost.
+`new 'https://www.google.com/maps/dir/…' -o trips/ladakh.yaml`.
 
 **Check the leg distances against Google Maps.** A leg marked `⚠` is much longer by road than in a
 straight line, which usually means OpenStreetMap is missing a road there (common near borders). If
