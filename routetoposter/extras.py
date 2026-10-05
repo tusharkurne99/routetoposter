@@ -21,6 +21,7 @@ SIGHT_LIMIT = 8  # auto sights: at most this many
 OPEN_METEO = "https://api.open-meteo.com/v1/elevation"
 ELEVATION_BATCH = 100  # coordinates per Open-Meteo request (its limit)
 CREST_TOLERANCE_M = 80  # the elevation grid can read a little under a pass's crest
+PEAK_MIN_M = 1000  # lower "peaks" are mostly hills on the plains
 
 Point = tuple[float, float]  # (lon, lat)
 
@@ -57,6 +58,19 @@ def fetch_passes(bbox: tuple[float, float, float, float]) -> list[Pass]:
         if printable_name(el.get("tags", {}))])
     remember_area("passes", bbox)
     return [Pass(name, lon, lat, _parse_ele(ele)) for name, lon, lat, ele in rows]
+
+
+def fetch_peaks(bbox: tuple[float, float, float, float]) -> list[tuple[float, float, float]]:
+    """(lon, lat, metres) of every mountain peak in the area that OpenStreetMap gives an altitude of
+    at least PEAK_MIN_M; the Pelennor Fields style draws mountain symbols on them. One small query, cached."""
+    bbox = saved_area("peaks", bbox)
+    b = ",".join(f"{v:.4f}" for v in bbox)
+    rows = cached_json("peaks", [[round(v, 4) for v in bbox], POI_VERSION], lambda: [
+        [el["lon"], el["lat"], ele]
+        for el in overpass(f'[out:json][timeout:120];node["natural"="peak"]["ele"]({b});out;', patient=False)["elements"]
+        if (ele := _parse_ele(el.get("tags", {}).get("ele"))) is not None and ele >= PEAK_MIN_M])
+    remember_area("peaks", bbox)
+    return [tuple(row) for row in rows]
 
 
 def fetch_sight_candidates(bbox: tuple[float, float, float, float]) -> list[Sight]:

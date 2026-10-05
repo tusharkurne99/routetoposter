@@ -2,11 +2,13 @@
 
 This is the only module that calls the others in order; render.py then only draws.
 """
-from .extras import altitudes, auto_sights, fetch_passes, fetch_sight_candidates, passes_on_route
+from .extras import altitudes, auto_sights, fetch_passes, fetch_peaks, fetch_sight_candidates, passes_on_route
 from .layout import Frame, fit, poster_inches
 from .mapdata import download_level, fetch_features, fetch_sea, roads_to_draw, tiles_status
+from .pelennor_fields import BorderText
 from .render import SEP, Poster, PosterText, is_loop
 from .route import Route, haversine_km, route_trip
+from .runes import number_words
 from .sights import Found, locate_sights
 from .trip import Trip
 
@@ -14,8 +16,9 @@ MAP_SHARE = 0.75  # roughly the share of the poster that shows map (the rest is 
 STOP_PASS_KM = 2.0  # a pass this close to a stop is that stop
 
 
-def build_poster(trip: Trip) -> tuple[Poster, list[Found]]:
-    """Everything needed to draw `trip`, plus where each sights_nearby entry was found."""
+def build_poster(trip: Trip, peaks: bool = False) -> tuple[Poster, list[Found]]:
+    """Everything needed to draw `trip`, plus where each sights_nearby entry was found. `peaks`:
+    also look up named mountain peaks (the Pelennor Fields style draws mountains on them)."""
     print("1/4  Route")
     route = route_trip(trip.stops, trip.route)
     for warning in route.warnings:
@@ -43,6 +46,7 @@ def build_poster(trip: Trip) -> tuple[Poster, list[Found]]:
             "altitudes", lambda: altitudes(stop_points, route.coords, passes), (heights, None, None))
         if top_marker:
             passes.append(top_marker)
+    peak_list = optional("mountain peaks", lambda: fetch_peaks(frame.bbox()), []) if peaks else []
     for p in passes:
         print(f"     ▲ {p.name}" + (f" {p.ele:,.0f} m" if p.ele else ""))
     for f in found:
@@ -54,7 +58,8 @@ def build_poster(trip: Trip) -> tuple[Poster, list[Found]]:
     # A pass that is one of your stops (Khardung La) is counted above but drawn only as the stop.
     drawn_passes = [p for p in passes if not any(haversine_km((p.lon, p.lat), st) < STOP_PASS_KM for st in stop_points)]
     poster = Poster(frame=frame, features=features, roads=roads, sea=sea, route=route, stops=trip.stops,
-                    stop_heights=heights, passes=drawn_passes, sights=sights, text=text, show=trip.show)
+                    stop_heights=heights, passes=drawn_passes, sights=sights, text=text, show=trip.show,
+                    peaks=peak_list, border=border_text(trip, passes))
     return poster, found
 
 
@@ -92,6 +97,27 @@ def optional(what: str, lookup, fallback):
         print(f"     ⚠ Couldn't look up {what} ({first_line}); the poster is made without them.\n"
               "       Run it again later to add them (everything else is saved).")
         return fallback
+
+
+def border_text(trip: Trip, passes: list) -> BorderText:
+    """What the runes in a Pelennor Fields frame say. Above: the stops in order (a place you return to once).
+    Below: the days, the passes and the highest pass crossed, in words, because runes have no
+    digits. The sides: the trip file's runes_left / runes_right, else the theme's."""
+    names: list[str] = []
+    for stop in trip.stops:
+        if not stop.via and stop.name not in names:
+            names.append(stop.name)
+    facts = []
+    days = trip_days(trip)
+    if days:
+        facts.append(f"{number_words(days)} day{'s' if days != 1 else ''}")
+    named = [p for p in passes if p.name != "Highest point"]
+    if named:
+        facts.append(f"{number_words(len(named))} pass{'es' if len(named) != 1 else ''}")
+        top = max(named, key=lambda p: p.ele or 0)
+        facts.append(f"over {top.name}")
+    return BorderText(top=" · ".join(names), bottom=" · ".join(facts) or trip.title,
+                      left=trip.runes_left, right=trip.runes_right)
 
 
 def subtitle(trip: Trip) -> str:

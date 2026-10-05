@@ -18,6 +18,7 @@ ROUTE_PAD = 0.04  # extra margin inside ROUTE_BOX, as a fraction of its size
 KM_PER_DEG = 111.32  # km per degree of latitude
 PIXEL_SIZE_DPI = 300  # pixel sizes (instagram…) are drawn at this dpi
 PREVIEW_LONG_EDGE_PX = 1200
+NICE_KM = [1, 2, 5, 10, 20, 25, 50, 100, 200, 250, 500, 1000]  # scale bar lengths to choose from
 
 
 @dataclass

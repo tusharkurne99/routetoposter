@@ -218,3 +218,46 @@ def test_a_pass_named_only_mountain_pass_is_left_out():
     route = [(77.0, 34.0), (78.0, 34.0)]
     passes = [Pass("Mountain pass", 77.5, 34.0, None), Pass("Chang La", 77.6, 34.0, 5360)]
     assert [p.name for p in passes_on_route(passes, route)] == ["Chang La"]
+
+
+def test_runes_and_numbers_in_words():
+    from routetoposter.runes import number_words, to_runes
+
+    assert to_runes("Spiti Valley") == "ᛋᛈᛁᛏᛁ ᚠᚪᛚᛚᛖᚣ"
+    assert to_runes("There and back again") == "ᚦᛖᚱᛖ ᚪᚾᛞ ᛒᚪᚳᚳ ᚪᚷᚪᛁᚾ"  # TH is one rune
+    assert to_runes("Kaza 3670") == "ᚳᚪᛋᚪ "  # runes have no digits
+    assert [number_words(n) for n in (3, 10, 42, 833)] == ["three", "ten", "forty-two", "eight hundred thirty-three"]
+
+
+def test_border_text_lists_stops_once_and_facts_in_words():
+    from routetoposter.build import border_text
+
+    trip = Trip(stops=STOPS, runes_left="Our own words")
+    border = border_text(trip, [Pass("Kunzum La", 0, 0, 4551), Pass("Highest point", 0, 0, 4600)])
+    assert border.top == "Manali · Kaza"  # Manali again at the end isn't repeated
+    assert border.bottom == "four days · one pass · over Kunzum La"
+    assert (border.left, border.right) == ("Our own words", None)  # None = the theme's line
+
+
+def test_pelennor_fields_theme_and_its_fonts_load():
+    theme = load_theme("pelennor_fields")
+    fonts = load_fonts(theme)
+    assert theme["style"] == "pelennor_fields" and {"title", "runes", "bold"} <= set(fonts)
+    assert load_fonts(load_theme("terracotta"))["title"] is not None  # classic themes: title = bold
+
+
+def test_pelennor_fields_render_offline(tmp_path):
+    from routetoposter.pelennor_fields import BorderText
+
+    route = Route([(77.19, 32.24), (77.6, 32.0), (78.07, 32.23), (77.19, 32.24)], [Leg("Manali", "Kaza", 200, 5)])
+    frame = fit(route.coords, 4, 5)
+    glacier = [[77.4, 32.3], [77.5, 32.3], [77.5, 32.35], [77.4, 32.3]]
+    poster = Poster(frame=frame, features={"glacier": [glacier], "primary": [[[77.0, 32.0], [78.2, 32.3]]]},
+                    roads=["primary"], sea=[], route=route, stops=STOPS, stop_heights=[2050, 3650, 2050],
+                    passes=[], sights=[], text=PosterText("Spiti Valley", "Manali loop", "200 KM", "JUNE 2026"),
+                    peaks=[(77.8, 32.4, 5200)],
+                    border=BorderText("Manali · Kaza", "four days", None, "Our own words"))
+    out = tmp_path / "pelennor_fields.png"
+    theme = load_theme("pelennor_fields")
+    render(str(out), poster, theme, load_fonts(theme), dpi=50)
+    assert Image.open(out).size == (200, 250)

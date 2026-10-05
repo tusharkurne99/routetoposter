@@ -1,5 +1,9 @@
 """Draw the poster with matplotlib. No network access here: everything to draw arrives in a Poster.
 
+Themes in the Pelennor Fields style ("style": "pelennor_fields") share the map, route, markers and
+labels below and get their frame, mountains and title block from pelennor_fields.py instead of the
+fades and spaced title.
+
 Layers, bottom to top (the `zorder` values below):
     0.8 sea · 1 glaciers, lakes · 2.x rivers, streams, roads · 5–6.5 the route (casing, line,
     arrows) · 7.x markers and symbols · 9 fades and the solid title band · 9.5 water names ·
@@ -21,9 +25,11 @@ from matplotlib.font_manager import FontProperties  # noqa: E402
 from matplotlib.patches import PathPatch  # noqa: E402
 from matplotlib.path import Path as MplPath  # noqa: E402
 
+from . import pelennor_fields  # noqa: E402
 from .extras import Pass, Sight  # noqa: E402
-from .layout import KM_PER_DEG, ROUTE_BOX, Frame  # noqa: E402
+from .layout import KM_PER_DEG, NICE_KM, ROUTE_BOX, Frame  # noqa: E402
 from .mapdata import LINE_WIDTH_PT, is_latin  # noqa: E402
+from .pelennor_fields import BorderText  # noqa: E402
 from .route import Route, haversine_km  # noqa: E402
 from .trip import Show, Stop  # noqa: E402
 
@@ -35,7 +41,6 @@ SIGHT_SYMBOL = {"monastery": "☸", "temple": "✸", "church": "✝", "mosque": 
                 "viewpoint": "✦", "waterfall": "≋", "lake": "≈", "beach": "☼", "lighthouse": "◉",
                 "peak": "△", "park": "♣", "museum": "⌂", "hot_spring": "♨", "dam": "≡", "sight": "●"}
 CONNECTOR_MIN_IN = 0.35  # a sight further than this (× s) from its stop gets a dotted line to it
-NICE_KM = [1, 2, 5, 10, 20, 25, 50, 100, 200, 250, 500, 1000]
 
 
 @dataclass
@@ -60,6 +65,8 @@ class Poster:
     sights: list[Sight]
     text: PosterText
     show: Show = field(default_factory=Show)
+    peaks: list = field(default_factory=list)  # (lon, lat, metres), for Pelennor Fields mountains
+    border: BorderText | None = None  # what the runes in a Pelennor Fields frame say
 
 
 @dataclass
@@ -93,10 +100,20 @@ def render(path: str, poster: Poster, theme: dict, fonts: dict, dpi: float) -> N
         x, y = frame.project(a[:, 0], a[:, 1])
         return np.column_stack((x, y))
 
-    _draw_map(ax, poster, theme, s, proj)
-
+    pelennor = theme.get("style") == "pelennor_fields"
     rx, ry = frame.project([c[0] for c in poster.route.coords], [c[1] for c in poster.route.coords])
     route_xy = np.column_stack((rx, ry))
+
+    _draw_map(ax, poster, theme, s, proj)
+    if pelennor:
+        lay = pelennor_fields.layout(poster.text, s)
+        pelennor_fields.draw_mountains(ax, poster, theme, s, proj, route_xy, lay)
+        map_area = (lay.inner + 0.2 * s, lay.map_bottom + 0.2 * s, W - lay.inner - 0.2 * s, H - lay.inner - 0.2 * s)
+    else:
+        layout, text_top = _text_layout(poster.text, s)
+        solid_top = text_top + 0.25 * s
+        map_area = (0.3 * s, solid_top + 0.35 * s, W - 0.3 * s, 0.86 * H)
+
     round_line = {"solid_capstyle": "round", "solid_joinstyle": "round"}
     ax.plot(rx, ry, color=bg, lw=CASING_WIDTH * s, alpha=0.85, zorder=5, **round_line)
     ax.plot(rx, ry, color=theme["route"], lw=ROUTE_WIDTH * s, zorder=6, **round_line)
@@ -106,26 +123,24 @@ def render(path: str, poster: Poster, theme: dict, fonts: dict, dpi: float) -> N
     if show.arrows:
         _arrows(ax, route_xy, stop_xy, bg, s)
 
-    layout, text_top = _text_layout(poster.text, s)
-    solid_top = text_top + 0.25 * s
-
     labels = (_stop_markers(ax, frame, shown, theme, s, show.stop_labels)
               + _pass_markers(ax, frame, poster.passes, theme, s)
               + _sight_markers(ax, frame, poster.sights, theme, s))
     labels.sort(key=lambda lb: ({"major": 0, "minor": 1, "small": 2}[lb.tier], lb.optional))
     placed = _place_labels(ax, labels, theme, fonts, s)
-    map_area = (0.3 * s, solid_top + 0.35 * s, W - 0.3 * s, 0.86 * H)
     if show.water_names:
         _water_labels(ax, frame, poster.features, route_xy[:: max(1, len(rx) // 3000)], placed, theme, fonts, s, map_area)
 
-    fade_top = max(ROUTE_BOX[1] * H, solid_top + 0.6 * s)
-    _band(ax, theme["gradient_color"], W, 0, solid_top)
-    _fade(ax, theme["gradient_color"], W, solid_top, fade_top, solid_low=True)
-    _fade(ax, theme["gradient_color"], W, 0.88 * H, H, solid_low=False)
-
-    _draw_text(fig, ax, poster.text, layout, theme, fonts, s, W, H)
-    if show.scale_bar:
-        _scale_bar(ax, frame, theme, fonts, s)
+    if pelennor:
+        pelennor_fields.decorate(fig, ax, poster, theme, fonts, s, lay, placed)
+    else:
+        fade_top = max(ROUTE_BOX[1] * H, solid_top + 0.6 * s)
+        _band(ax, theme["gradient_color"], W, 0, solid_top)
+        _fade(ax, theme["gradient_color"], W, solid_top, fade_top, solid_low=True)
+        _fade(ax, theme["gradient_color"], W, 0.88 * H, H, solid_low=False)
+        _draw_text(fig, ax, poster.text, layout, theme, fonts, s, W, H)
+        if show.scale_bar:
+            _scale_bar(ax, frame, theme, fonts, s)
     fig.savefig(path, dpi=dpi, facecolor=bg)
     plt.close(fig)
 

@@ -137,8 +137,8 @@ def draw(trip: Trip, trip_path: Path, themes: list[str], preview: bool) -> list[
     """Build the poster once and draw it in each theme. Returns [(theme, saved file)].
     Files: posters/<trip file name>_<theme>_<size>.<format>, or for previews
     posters/previews/<trip file name>_<theme>.png. Each run overwrites the previous file."""
-    poster, _ = build_poster(trip)
-    fonts = load_fonts()
+    mountains = any(load_theme(name).get("style") == "pelennor_fields" for name in themes)
+    poster, _ = build_poster(trip, peaks=mountains)
     out_dir = POSTER_DIR / "previews" if preview else POSTER_DIR
     out_dir.mkdir(parents=True, exist_ok=True)
     dpi = output_dpi(trip, poster.frame.width, poster.frame.height, preview)
@@ -149,7 +149,8 @@ def draw(trip: Trip, trip_path: Path, themes: list[str], preview: bool) -> list[
             path = out_dir / f"{trip_path.stem}_{name}.png"
         else:
             path = out_dir / f"{trip_path.stem}_{name}_{trip.size}.{trip.format}"
-        render(str(path), poster, load_theme(name), fonts, dpi)
+        theme = load_theme(name)
+        render(str(path), poster, theme, load_fonts(theme), dpi)
         print(f"Saved {path}")
         saved.append((name, path))
     return saved

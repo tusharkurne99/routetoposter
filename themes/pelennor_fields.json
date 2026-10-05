@@ -1,0 +1,29 @@
+{
+  "name": "Pelennor Fields",
+  "description": "An old map in the style of Thror's Map: aged paper, ink mountains, a red journey and runes",
+  "style": "pelennor_fields",
+  "bg": "#D8C397",
+  "text": "#33240F",
+  "gradient_color": "#D8C397",
+  "water": "#C9B184",
+  "water_line": "#5E4527",
+  "parks": "#DCCAA0",
+  "road_motorway": "#9A845F",
+  "road_primary": "#A38D68",
+  "road_secondary": "#AC9672",
+  "road_tertiary": "#B5A07D",
+  "road_residential": "#BEAA88",
+  "road_default": "#C2AE8E",
+  "route": "#8A2316",
+  "accent": "#8A2316",
+  "fonts": {
+    "light": "im_fell/IMFellEnglish-Italic.ttf",
+    "regular": "im_fell/IMFellEnglish-Regular.ttf",
+    "bold": "im_fell/IMFellEnglishSC-Regular.ttf",
+    "italic": "im_fell/IMFellEnglish-Italic.ttf",
+    "title": "uncial_antiqua/UncialAntiqua-Regular.ttf",
+    "runes": "noto_sans_runic/NotoSansRunic-Regular.ttf"
+  },
+  "runes_left": "The road goes ever on and on",
+  "runes_right": "There and back again"
+}

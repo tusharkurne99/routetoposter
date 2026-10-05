@@ -76,6 +76,8 @@ class Trip:
     format: str = "png"
     map_detail: str = "auto"
     route: str = "driving"
+    runes_left: str | None = None  # pelennor_fields theme: the runes down the left edge (None = the theme's)
+    runes_right: str | None = None  # ... and down the right edge
     show: Show = field(default_factory=Show)
 
 
@@ -104,6 +106,8 @@ def write_trip(trip: Trip, path: Path, route_lines: list[str], themes: list[str]
         f"format: {trip.format}   # png | pdf | svg",
         f"map_detail: {trip.map_detail}   # auto | more | less  (how many small roads are drawn)",
         f"route: {trip.route}   # driving = follow the roads; straight = straight lines between stops",
+        "# runes_left: The road goes ever on and on   # pelennor_fields theme: runes down the left edge",
+        "# runes_right: There and back again          # pelennor_fields theme: runes down the right edge",
         "",
         "# ── Stops ────────────────────────────────────────────────────────────",
         "# nights: nights you slept there (0 = passed through or visited).",
@@ -208,6 +212,8 @@ def load_trip(path: Path, themes: list[str]) -> Trip:
     trip.format = _choice(raw, "format", FORMATS, trip.format)
     trip.map_detail = _choice(raw, "map_detail", MAP_DETAILS, trip.map_detail)
     trip.route = _choice(raw, "route", ROUTE_MODES, trip.route)
+    trip.runes_left = _opt_text(raw, "runes_left")
+    trip.runes_right = _opt_text(raw, "runes_right")
     trip.show = _read_show(raw.get("show") or {})
     if sum(not s.via for s in trip.stops) < 2:
         raise UserError("At least two stops must not be 'via: true'.")

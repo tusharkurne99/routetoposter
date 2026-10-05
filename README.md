@@ -1,7 +1,7 @@
 # RouteToPoster
 
 Turn a road trip planned in Google Maps into a minimalist map poster: the region's real roads,
-rivers and lakes in one of 17 colour themes, with your route, stops, mountain passes and sights on
+rivers and lakes in one of 18 themes, with your route, stops, mountain passes and sights on
 top.
 
 You give it one thing, a Google Maps directions link. It writes a trip file you can edit (title,
@@ -9,11 +9,11 @@ dates, nights at each stop, theme, size…), and then draws the poster.
 
 Inspired by [maptoposter](https://github.com/originalankur/maptoposter) by Ankur Gupta.
 
-| Spiti Valley (contrast zones) | Ladakh (terracotta) |
-|---|---|
-| ![Spiti Valley poster in the contrast zones theme](images/spiti_contrast_zones.jpg) | ![Ladakh poster in the terracotta theme](images/ladakh_terracotta.jpg) |
+| Spiti Valley (contrast zones) | Ladakh (terracotta) | Spiti Valley (Pelennor Fields) |
+|---|---|---|
+| ![Spiti Valley poster in the contrast zones theme](images/spiti_contrast_zones.jpg) | ![Ladakh poster in the terracotta theme](images/ladakh_terracotta.jpg) | ![Spiti Valley poster in the Pelennor Fields theme, an old map with runes](images/spiti_pelennor_fields.jpg) |
 
-The same Spiti Valley trip in all 17 themes:
+The same Spiti Valley trip in the 17 classic themes:
 
 ![Spiti Valley poster in all 17 themes](images/spiti_all_themes.jpg)
 
@@ -69,7 +69,7 @@ ones you'll usually change:
 | `dates` | Free text, e.g. `26 Sept – 2 Oct 2026` |
 | `nights` (on each stop) | Nights you slept there. Decides the markers and the number of days. |
 | `sights_nearby` (on each stop) | Places you saw near that stop, e.g. `[Rezang La, Pangong Lake]` |
-| `theme` | One of 17 themes (`routetoposter themes` lists them) |
+| `theme` | One of 18 themes (`routetoposter themes` lists them) |
 | `size` | `8x10`, `12x16`, `18x24`, `24x36`, `A4`, `A3`, `A2`, `instagram`, `phone`, `wallpaper` |
 | `orientation` | `portrait` or `landscape` |
 | `dpi` | `150` screen, `300` print, `600` big print |
@@ -113,7 +113,49 @@ viewpoints along the route automatically.
 from OpenStreetMap and other free services. Everything is saved in `cache/`, so later runs (another
 theme, size, title or nights) take seconds.
 
-## 6. If something goes wrong
+## 6. The Pelennor Fields theme
+
+Pelennor Fields turns the poster into an old map in the style of Thrór's Map from The Hobbit:
+aged paper, ink mountain ranges, faint roads, the journey in red, a compass rose, and Anglo-Saxon
+runes around the border. To use it, set the theme in your trip file and make the poster as usual:
+
+```yaml
+theme: pelennor_fields
+```
+
+```bash
+.venv/bin/routetoposter preview trips/spiti.yaml
+.venv/bin/routetoposter make trips/spiti.yaml
+```
+
+The runes are worked out from your trip, so there is nothing else to fill in:
+
+| Border | What the runes say |
+|---|---|
+| Top | your stops, in order |
+| Bottom | the days, the number of passes and the highest pass, e.g. "ten days · three passes · over Kunzum La" |
+| Left | "The road goes ever on and on" |
+| Right | "There and back again" |
+
+The title is also written in runes above it, and a small note on the map translates them all.
+To put your own words on the left and right edges, add these lines to the trip file:
+
+```yaml
+runes_left: Manali to Manali
+runes_right: Over Kunzum La and home again
+```
+
+Good to know:
+
+- The mountains are drawn where the land is high: on glaciers, and on named peaks of 1,000 m or
+  more. The first poster of a new area makes one extra small download for the peaks.
+- Runes have no digits, so numbers are written out in words, and a letter the runes don't have
+  is written with the closest rune (V with the F rune).
+- A long list of stops is set smaller to fit the border; very long ones lose their last names.
+- The translation note goes in a free corner of the map. When every corner holds labels, it is
+  left out.
+
+## 7. If something goes wrong
 
 | Message | What to do |
 |---|---|
@@ -124,13 +166,19 @@ theme, size, title or nights) take seconds.
 | `"titel" isn't a setting. Did you mean "title"?` | A typo in the trip file; the message names the setting. |
 | `OpenStreetMap servers are busy or unreachable` while downloading the map | Wait a few minutes and run it again; the parts already downloaded are kept. |
 
-## 7. Examples
+## 8. Examples
 
-`examples/` has three finished trip files (Spiti, Kerala, Ladakh):
+`examples/` has finished trip files for Spiti, Kerala and Ladakh, plus Spiti in the Pelennor
+Fields theme:
 
 ```bash
 mkdir -p trips && cp examples/spiti.yaml trips/
 .venv/bin/routetoposter preview trips/spiti.yaml
+```
+
+```bash
+cp examples/spiti_pelennor_fields.yaml trips/
+.venv/bin/routetoposter preview trips/spiti_pelennor_fields.yaml
 ```
 
 ## Tests
@@ -147,5 +195,5 @@ RouteToPoster is MIT-licensed: see `LICENSE`.
 
 - Map data © [OpenStreetMap](https://www.openstreetmap.org/copyright) contributors (ODbL).
 - Themes from [maptoposter](https://github.com/originalankur/maptoposter), MIT licence: see `themes/LICENSE`.
-- Font: [Jost](https://github.com/indestructible-type/Jost), SIL Open Font License: see `fonts/jost/OFL.txt`.
+- Fonts: [Jost](https://github.com/indestructible-type/Jost), IM Fell English, Uncial Antiqua and Noto Sans Runic, all under the SIL Open Font License: see `fonts/*/OFL.txt`.
 - Routing by [OSRM](https://project-osrm.org) and [Valhalla](https://github.com/valhalla/valhalla); altitudes from [Open-Meteo](https://open-meteo.com).

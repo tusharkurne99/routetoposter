@@ -157,3 +157,9 @@ def test_link_changed_by_the_shell_gets_a_clear_message():
     mangled = (DATA / "ladakh_link.txt").read_text().replace("!", "echo hello")
     with pytest.raises(UserError, match="single quotes"):
         parse_link(mangled)
+
+
+def test_runes_settings_round_trip(tmp_path):
+    path = write_yaml(tmp_path, STOPS + "runes_left: Our own words\n")
+    trip = load_trip(path, THEMES)
+    assert (trip.runes_left, trip.runes_right) == ("Our own words", None)
