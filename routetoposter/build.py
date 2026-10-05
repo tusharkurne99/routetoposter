@@ -6,11 +6,12 @@ from .extras import altitudes, auto_sights, fetch_passes, fetch_sight_candidates
 from .layout import Frame, fit, poster_inches
 from .mapdata import download_level, fetch_features, fetch_sea, roads_to_draw, tiles_status
 from .render import SEP, Poster, PosterText, is_loop
-from .route import Route, route_trip
+from .route import Route, haversine_km, route_trip
 from .sights import Found, locate_sights
 from .trip import Trip
 
 MAP_SHARE = 0.75  # roughly the share of the poster that shows map (the rest is the title block)
+STOP_PASS_KM = 2.0  # a pass this close to a stop is that stop
 
 
 def build_poster(trip: Trip) -> tuple[Poster, list[Found]]:
@@ -50,8 +51,10 @@ def build_poster(trip: Trip) -> tuple[Poster, list[Found]]:
     text = PosterText(title=trip.title, subtitle=subtitle(trip),
                       stats=stats_line(trip, route, passes, highest) if trip.show.stats else "",
                       footer=footer_line(trip, frame))
+    # A pass that is one of your stops (Khardung La) is counted above but drawn only as the stop.
+    drawn_passes = [p for p in passes if not any(haversine_km((p.lon, p.lat), st) < STOP_PASS_KM for st in stop_points)]
     poster = Poster(frame=frame, features=features, roads=roads, sea=sea, route=route, stops=trip.stops,
-                    stop_heights=heights, passes=passes, sights=sights, text=text, show=trip.show)
+                    stop_heights=heights, passes=drawn_passes, sights=sights, text=text, show=trip.show)
     return poster, found
 
 

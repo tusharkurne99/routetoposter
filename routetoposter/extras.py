@@ -130,6 +130,7 @@ def kind_from_tags(tags: dict) -> str:
 def passes_on_route(passes: list[Pass], route: list[Point]) -> list[Pass]:
     """Passes within PASS_MAX_KM of the route. The same pass is often mapped twice; one copy is kept
     (preferring the one with an altitude)."""
+    passes = [p for p in passes if p.name.casefold() not in UNNAMED_PASSES]
     if not passes:
         return []
     dist = distance_to_route_km([(p.lon, p.lat) for p in passes], route)
@@ -144,6 +145,9 @@ def passes_on_route(passes: list[Pass], route: list[Point]) -> list[Pass]:
             near[near.index(twin)] = p
     return near
 
+
+# "Names" that only say what it is: a label like "MOUNTAIN PASS" says nothing, so such passes are left out.
+UNNAMED_PASSES = {"pass", "mountain pass", "la", "col", "saddle"}
 
 # Names made only of these words ("Buddhist Temple") don't say which place it is.
 GENERIC_WORDS = {"tibetan", "buddhist", "buddha", "monastery", "gompa", "gonpa", "temple", "old", "new",

@@ -210,3 +210,11 @@ def test_a_partly_saved_square_is_used_only_for_its_saved_part(tmp_path, monkeyp
     mapdata._save_square(square, "high", (31.0, 77.0, 31.5, 77.2), {"primary": []})  # only the west part saved
     assert mapdata.tiles_status((31.1, 77.05, 31.4, 77.15), "high") == (1, 1)
     assert mapdata.tiles_status((31.1, 77.05, 31.4, 77.40), "high") == (0, 1)
+
+
+def test_a_pass_named_only_mountain_pass_is_left_out():
+    from routetoposter.extras import passes_on_route
+
+    route = [(77.0, 34.0), (78.0, 34.0)]
+    passes = [Pass("Mountain pass", 77.5, 34.0, None), Pass("Chang La", 77.6, 34.0, 5360)]
+    assert [p.name for p in passes_on_route(passes, route)] == ["Chang La"]
