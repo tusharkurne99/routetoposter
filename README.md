@@ -9,9 +9,13 @@ dates, nights at each stop, theme, size…), and then draws the poster.
 
 Inspired by [maptoposter](https://github.com/originalankur/maptoposter) by Ankur Gupta.
 
-| Spiti Valley (terracotta) | Ladakh (midnight blue) |
+| Spiti Valley (contrast zones) | Ladakh (terracotta) |
 |---|---|
-| ![Spiti Valley poster in the terracotta theme](images/spiti_terracotta.jpg) | ![Ladakh poster in the midnight blue theme](images/ladakh_midnight_blue.jpg) |
+| ![Spiti Valley poster in the contrast zones theme](images/spiti_contrast_zones.jpg) | ![Ladakh poster in the terracotta theme](images/ladakh_terracotta.jpg) |
+
+The same Spiti Valley trip in all 17 themes:
+
+![Spiti Valley poster in all 17 themes](images/spiti_all_themes.jpg)
 
 ## 1. Install (once)
 
