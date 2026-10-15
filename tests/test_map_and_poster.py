@@ -320,6 +320,31 @@ def test_border_text_lists_stops_once_and_facts_in_words():
     assert (border.left, border.right) == ("Our own words", None)  # None = the theme's line
 
 
+def test_every_font_is_its_own_file_with_a_fallback():
+    from matplotlib.font_manager import FontProperties, findfont
+
+    from routetoposter.style import DEFAULT_FONTS, FALLBACK_FONT, FONT_ROOT
+
+    theme = load_theme("pelennor_fields")
+    for files, fonts in ((DEFAULT_FONTS, load_fonts()), ({**DEFAULT_FONTS, **theme["fonts"]}, load_fonts(theme))):
+        for role, file in files.items():
+            fp = fonts[role]
+            assert fp.get_family()[1] == FALLBACK_FONT
+            own = FontProperties(family=fp.get_family()[0], weight=fp.get_weight(), style=fp.get_style())
+            assert findfont(own, fallback_to_default=False) == str(FONT_ROOT / file), role
+
+
+def test_an_arrow_in_the_subtitle_is_drawn(tmp_path):
+    import warnings
+
+    route = route_trip(STOPS, "straight")
+    poster = Poster(frame=fit(route.coords, 4, 5), features={}, roads=[], sea=[], route=route, stops=STOPS,
+                    stop_heights=[None] * 3, passes=[], sights=[], text=PosterText("Spiti", "Manali → Kaza", "", ""))
+    with warnings.catch_warnings():
+        warnings.filterwarnings("error", message=".*missing from font")
+        render(str(tmp_path / "p.png"), poster, load_theme("terracotta"), load_fonts(), dpi=20)
+
+
 def test_pelennor_fields_theme_and_its_fonts_load():
     theme = load_theme("pelennor_fields")
     fonts = load_fonts(theme)
