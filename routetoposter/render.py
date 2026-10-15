@@ -44,7 +44,7 @@ PLANE = "✈"  # in SYMBOL_FONT, pointing right (east)
 BOAT = [[(-0.55, 0.0), (0.62, 0.0), (0.42, -0.2), (-0.42, -0.2)],
         [(-0.02, 0.08), (-0.02, 1.0), (-0.5, 0.08)],
         [(0.06, 0.16), (0.06, 0.86), (0.42, 0.16)]]
-BOAT_HEIGHT = 0.24  # inches on a 12x16 poster (× s)
+BOAT_HEIGHT = 0.165  # inches on a 12x16 poster (× s); with the hull, ~0.2 in all round, the size of the PLANE
 LOOP_KM = 1.0  # start and end closer than this: the trip is a loop
 SEP = "  ·  "
 SYMBOL_FONT = "DejaVu Sans"  # ships with matplotlib and has every symbol below
