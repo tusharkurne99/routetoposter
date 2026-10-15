@@ -32,6 +32,7 @@ MAX_LEG_KM = 1500  # longer crossings would need the coastline of half an ocean;
 # run along the coast. Where that closes a narrow channel, it is tried again with CLEARANCE_CELLS.
 CLEARANCE_SHARE = 0.03
 CLEARANCE_CELLS = 2
+SAILING_VERSION = 1  # part of the saved sea routes' keys (route._sail); bump when the planning or the numbers above change
 SEA_BEND = 0.06  # open water: the arc bows out this share of its length (flights: route.ARC_BEND)
 CORNER = 0.45  # a turn is rounded over this share of the runs on either side, less if that clips land
 CURVE_POINTS = 16

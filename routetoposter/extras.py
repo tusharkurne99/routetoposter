@@ -1,6 +1,7 @@
 """Details along the route: mountain passes, well-known sights ("auto sights") and altitudes.
-Passes come from one small Overpass query; auto sights (only when switched on) from a heavier one
-per tile. Altitudes come from the free Open-Meteo elevation API. Every lookup is cached.
+Passes and peaks come from small Overpass queries, auto sights (only when switched on) from a heavier
+one; all three per square of a fixed world grid (net.grid_rows), so a shifted poster area only asks
+for the squares it adds. Altitudes come from the free Open-Meteo elevation API. Every lookup is cached.
 """
 import time
 from dataclasses import dataclass
@@ -8,12 +9,13 @@ from urllib.parse import urlencode
 
 import numpy as np
 
-from .mapdata import make_tiles, overpass, printable_name
-from .net import cached_json, fetch_json, remember_area, saved_area
+from .mapdata import OVERPASS_SLOTS, overpass, printable_name
+from .net import cached_json, fetch_json, grid_rows, inside, old_area_rows
 from .route import haversine_km
 
 KM_PER_DEG = 111.32
-POI_TILE_KM2 = 20_000  # auto sights: one query over a whole large poster made Overpass time out
+POI_GRID_DEG = 2.0  # passes and peaks are saved per square this size: few points, a light query
+SIGHT_GRID_DEG = 1.0  # auto sights: a heavy query (one over a whole large poster made Overpass time out)
 POI_VERSION = 1  # part of the passes/sights cache keys; bump when their results change
 PASS_MAX_KM = 0.3  # a pass must be this close to the route line
 SIGHT_MAX_KM = 3.0  # auto sights: this close to the route
@@ -49,49 +51,58 @@ class Sight:
 
 def fetch_passes(bbox: tuple[float, float, float, float]) -> list[Pass]:
     """Every named mountain pass in the area (not yet filtered by the route). Passes are few and
-    mapped as single points, so one small query covers even a very large area."""
-    bbox = saved_area("passes", bbox)
-    b = ",".join(f"{v:.4f}" for v in bbox)
-    rows = cached_json("passes", [[round(v, 4) for v in bbox], POI_VERSION], lambda: [
-        [printable_name(el.get("tags", {})), el["lon"], el["lat"], el.get("tags", {}).get("ele")]
-        for el in overpass(f'[out:json][timeout:120];node["mountain_pass"="yes"]["name"]({b});out;', patient=False)["elements"]
-        if printable_name(el.get("tags", {}))])
-    remember_area("passes", bbox)
-    return [Pass(name, lon, lat, _parse_ele(ele)) for name, lon, lat, ele in rows]
+    mapped as single points, so the query is small even for a big square."""
+    rows = old_area_rows("passes", bbox, lambda area: [[round(v, 4) for v in area], POI_VERSION])
+    if rows is None:
+        rows = grid_rows("passes-grid", bbox, POI_GRID_DEG, [POI_VERSION], _passes_in, OVERPASS_SLOTS)
+    return [Pass(name, lon, lat, _parse_ele(ele)) for name, lon, lat, ele in _unique_inside(rows, bbox, 1)]
+
+
+def _passes_in(square) -> list[list]:
+    b = ",".join(f"{v:.4f}" for v in square)
+    return [[printable_name(el.get("tags", {})), el["lon"], el["lat"], el.get("tags", {}).get("ele")]
+            for el in overpass(f'[out:json][timeout:120];node["mountain_pass"="yes"]["name"]({b});out;', patient=False)["elements"]
+            if printable_name(el.get("tags", {}))]
 
 
 def fetch_peaks(bbox: tuple[float, float, float, float]) -> list[tuple[float, float, float]]:
     """(lon, lat, metres) of every mountain peak in the area that OpenStreetMap gives an altitude of
-    at least PEAK_MIN_M; the Pelennor Fields style draws mountain symbols on them. One small query, cached."""
-    bbox = saved_area("peaks", bbox)
-    b = ",".join(f"{v:.4f}" for v in bbox)
-    rows = cached_json("peaks", [[round(v, 4) for v in bbox], POI_VERSION], lambda: [
-        [el["lon"], el["lat"], ele]
-        for el in overpass(f'[out:json][timeout:120];node["natural"="peak"]["ele"]({b});out;', patient=False)["elements"]
-        if (ele := _parse_ele(el.get("tags", {}).get("ele"))) is not None and ele >= PEAK_MIN_M])
-    remember_area("peaks", bbox)
-    return [tuple(row) for row in rows]
+    at least PEAK_MIN_M; the Pelennor Fields style draws mountain symbols on them."""
+    rows = old_area_rows("peaks", bbox, lambda area: [[round(v, 4) for v in area], POI_VERSION])
+    if rows is None:
+        rows = grid_rows("peaks-grid", bbox, POI_GRID_DEG, [POI_VERSION], _peaks_in, OVERPASS_SLOTS)
+    return [tuple(row) for row in _unique_inside(rows, bbox, 0)]
+
+
+def _peaks_in(square) -> list[list]:
+    b = ",".join(f"{v:.4f}" for v in square)
+    return [[el["lon"], el["lat"], ele]
+            for el in overpass(f'[out:json][timeout:120];node["natural"="peak"]["ele"]({b});out;', patient=False)["elements"]
+            if (ele := _parse_ele(el.get("tags", {}).get("ele"))) is not None and ele >= PEAK_MIN_M]
 
 
 def fetch_sight_candidates(bbox: tuple[float, float, float, float]) -> list[Sight]:
-    """Every candidate auto sight in the area (not yet filtered by the route). This query is heavy,
-    so it runs per POI_TILE_KM2 tile, and only when `auto_sights` is on."""
-    bbox = saved_area("sight-candidates", bbox)
-    sights, seen = [], set()
-    for tile in make_tiles(bbox, POI_TILE_KM2):
-        rows = cached_json("sight-candidates", [[round(v, 4) for v in tile], POI_VERSION],
-                           lambda tile=tile: _sight_tile(tile))
-        for name, lon, lat, kind, famous in rows:
-            key = (name, round(lon, 4), round(lat, 4))
-            if key not in seen:  # the same place returned by two neighbouring tiles
-                seen.add(key)
-                sights.append(Sight(name, lon, lat, kind, famous=famous))
-    remember_area("sight-candidates", bbox)
-    return sights
+    """Every candidate auto sight in the area (not yet filtered by the route). The query is heavy, so
+    its squares are small (SIGHT_GRID_DEG), and it only runs when `auto_sights` is on."""
+    rows = grid_rows("sight-candidates-grid", bbox, SIGHT_GRID_DEG, [POI_VERSION], _sight_tile, OVERPASS_SLOTS)
+    return [Sight(name, lon, lat, kind, famous=famous) for name, lon, lat, kind, famous in _unique_inside(rows, bbox, 1)]
+
+
+def _unique_inside(rows: list[list], bbox, lon_at: int) -> list[list]:
+    """The rows whose (lon, lat), at row[lon_at] and row[lon_at + 1], lie in `bbox`, each place once:
+    a ring (a monastery's outline) touching two squares comes back from both."""
+    out, seen = [], set()
+    for row in rows:
+        lon, lat = row[lon_at], row[lon_at + 1]
+        key = (*row[:lon_at], round(lon, 4), round(lat, 4))
+        if key not in seen and inside(bbox, lon, lat):
+            seen.add(key)
+            out.append(row)
+    return out
 
 
 def _sight_tile(bbox) -> list[list]:
-    """Rows [name, lon, lat, kind, famous] for one tile."""
+    """Rows [name, lon, lat, kind, famous] for one square."""
     b = ",".join(f"{v:.4f}" for v in bbox)
     query = f"""[out:json][timeout:240];
 (

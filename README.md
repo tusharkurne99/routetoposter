@@ -150,7 +150,8 @@ At least two stops must stay on the map.
 
 **The first run for a new area takes a few minutes**: it downloads the map, passes and altitudes
 from OpenStreetMap and other free services. Everything is saved in `cache/`, so later runs (another
-theme, size, title or nights) take seconds.
+theme, size, title or nights) take seconds. Map data is saved in squares and routes leg by leg, so
+moving or adding a stop only downloads what changed around it.
 
 ## 6. The Pelennor Fields theme
 
