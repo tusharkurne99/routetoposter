@@ -6,7 +6,7 @@ fades and spaced title.
 
 Layers, bottom to top (the `zorder` values below):
     0.8 sea · 1 glaciers, lakes · 2.x rivers, streams, roads · 5–6.5 the route (casing, line,
-    arrows) · 7.x markers and symbols · 9 fades and the solid title band · 9.5 water names ·
+    arrows; flights and sea crossings thinner, dashed and dotted) · 7.x markers and symbols · 9 fades and the solid title band · 9.5 water names ·
     10 labels · 11 title block, scale bar
 Sizes are in points on a 12x16 in poster and multiplied by `s` (short edge / 12 in), so every
 poster size looks the same.
@@ -30,10 +30,21 @@ from .extras import Pass, Sight  # noqa: E402
 from .layout import KM_PER_DEG, NICE_KM, ROUTE_BOX, Frame  # noqa: E402
 from .mapdata import LINE_WIDTH_PT, is_latin  # noqa: E402
 from .pelennor_fields import BorderText  # noqa: E402
-from .route import Route, haversine_km  # noqa: E402
+from .route import GROUND, Route, haversine_km  # noqa: E402
 from .trip import Show, Stop  # noqa: E402
 
 ROUTE_WIDTH, CASING_WIDTH = 4.0, 9.0
+# Flights: a dashed arc with a plane at the middle. Sea crossings: round dots. Both thinner than the
+# road line, so the road trip stays the main thing. Dash lengths are in line widths (matplotlib).
+FLIGHT_WIDTH, FLIGHT_DASHES = 2.2, (0, (3, 2.2))
+SEA_WIDTH, SEA_DOTS = 3.0, (0, (0.01, 2.2))
+PLANE = "✈"  # in SYMBOL_FONT, pointing right (east)
+# A sailing boat facing right, in units of its height, drawn as a shape (no bundled font has ⛵):
+# the hull (bow on the right), then the mainsail behind the mast and the jib in front of it.
+BOAT = [[(-0.55, 0.0), (0.62, 0.0), (0.42, -0.2), (-0.42, -0.2)],
+        [(-0.02, 0.08), (-0.02, 1.0), (-0.5, 0.08)],
+        [(0.06, 0.16), (0.06, 0.86), (0.42, 0.16)]]
+BOAT_HEIGHT = 0.24  # inches on a 12x16 poster (× s)
 LOOP_KM = 1.0  # start and end closer than this: the trip is a loop
 SEP = "  ·  "
 SYMBOL_FONT = "DejaVu Sans"  # ships with matplotlib and has every symbol below
@@ -109,25 +120,27 @@ def render(path: str, poster: Poster, theme: dict, fonts: dict, dpi: float) -> N
         lay = pelennor_fields.layout(poster.text, s)
         pelennor_fields.draw_mountains(ax, poster, theme, s, proj, route_xy, lay)
         map_area = (lay.inner + 0.2 * s, lay.map_bottom + 0.2 * s, W - lay.inner - 0.2 * s, H - lay.inner - 0.2 * s)
+        visible = (lay.inner, lay.map_bottom, W - lay.inner, H - lay.inner)  # inside the frame
     else:
         layout, text_top = _text_layout(poster.text, s)
         solid_top = text_top + 0.25 * s
         map_area = (0.3 * s, solid_top + 0.35 * s, W - 0.3 * s, 0.86 * H)
+        visible = (0, solid_top, W, H)  # above the title band
 
-    round_line = {"solid_capstyle": "round", "solid_joinstyle": "round"}
-    ax.plot(rx, ry, color=bg, lw=CASING_WIDTH * s, alpha=0.85, zorder=5, **round_line)
-    ax.plot(rx, ry, color=theme["route"], lw=ROUTE_WIDTH * s, zorder=6, **round_line)
-
-    shown = [(st, h) for st, h in zip(poster.stops, poster.stop_heights) if not st.via]
+    shown = [(st, h) for st, h in zip(poster.stops, poster.stop_heights) if not st.via and not st.off_map]
     stop_xy = [tuple(float(v) for v in frame.project(st.lon, st.lat)) for st, _ in shown]
-    if show.arrows:
-        _arrows(ax, route_xy, stop_xy, bg, s)
+    off_map = [st for st in poster.stops if st.off_map]
+    taken = []  # boxes of the off-map names at the edge, kept clear of the other labels
+    for seg in poster.route.segments:
+        taken += _route_line(ax, proj(seg.coords), seg, theme, fonts, s, show.arrows, stop_xy,
+                             off_map if seg.off_map else [], visible,
+                             [frame.project(st.lon, st.lat) for st in off_map] if seg.off_map else [])
 
     labels = (_stop_markers(ax, frame, shown, theme, s, show.stop_labels)
               + _pass_markers(ax, frame, poster.passes, theme, s)
               + _sight_markers(ax, frame, poster.sights, theme, s))
     labels.sort(key=lambda lb: ({"major": 0, "minor": 1, "small": 2}[lb.tier], lb.optional))
-    placed = _place_labels(ax, labels, theme, fonts, s)
+    placed = _place_labels(ax, labels, theme, fonts, s, taken)
     if show.water_names:
         _water_labels(ax, frame, poster.features, route_xy[:: max(1, len(rx) // 3000)], placed, theme, fonts, s, map_area)
 
@@ -283,13 +296,13 @@ def _sight_markers(ax, frame: Frame, sights: list[Sight], theme: dict, s: float)
 TIER_SIZES = {"major": (10, 7.2), "minor": (8.5, 6.6), "small": (7, 6)}  # (name, detail) points
 
 
-def _place_labels(ax, labels: list[Label], theme: dict, fonts: dict, s: float) -> list[tuple]:
+def _place_labels(ax, labels: list[Label], theme: dict, fonts: dict, s: float, taken: list = ()) -> list[tuple]:
     """Place each label (most important first) right, left, above or below its marker: the first
-    spot that overlaps no earlier label or marker. If none is free, a required label goes to the
-    right anyway; an optional one is skipped. Returns every occupied box, so water names can avoid
-    them."""
+    spot that overlaps no earlier label, marker or `taken` box. If none is free, a required label
+    goes to the right anyway; an optional one is skipped. Returns every occupied box, so water names
+    can avoid them."""
     halo = [patheffects.withStroke(linewidth=3 * s, foreground=theme["bg"])]
-    placed = [(lb.x - lb.r, lb.y - lb.r, lb.x + lb.r, lb.y + lb.r) for lb in labels]
+    placed = [(lb.x - lb.r, lb.y - lb.r, lb.x + lb.r, lb.y + lb.r) for lb in labels] + list(taken)
 
     for lb in labels:
         if not is_latin(lb.title):
@@ -328,6 +341,149 @@ def _place_labels(ax, labels: list[Label], theme: dict, fonts: dict, s: float) -
 
 def _overlap(a, b) -> bool:
     return a[0] < b[2] and b[0] < a[2] and a[1] < b[3] and b[1] < a[3]
+
+
+# ── the route ────────────────────────────────────────────────────────────────────────────────────
+
+def _route_line(ax, xy: np.ndarray, seg, theme: dict, fonts: dict, s: float, arrows: bool, stop_xy: list,
+                off_map: list[Stop], visible: tuple, off_xy: list = ()) -> list[tuple]:
+    """One Segment of the route on a casing in the background colour (which keeps it clear of the
+    roads under it). On land: the solid line with direction arrows. A flight: a dashed arc with a
+    plane in the middle pointing the way flown (the arc's bend already shows it's a flight). A sea
+    crossing: a dotted line with a sailing boat in the middle, facing the way sailed.
+
+    A Segment to or from an `off_map` stop is cut off at the edge of the `visible` map (x0, y0, x1,
+    y1); its symbol goes in the middle of the part that shows, and the far stop's name and distance
+    go where the line leaves the map. Returns the boxes of those names."""
+    bg, color, mode = theme["bg"], theme["route"], seg.mode
+    rx, ry = xy[:, 0], xy[:, 1]
+    lines = []
+    if mode in GROUND:
+        round_line = {"solid_capstyle": "round", "solid_joinstyle": "round"}
+        lines += ax.plot(rx, ry, color=bg, lw=CASING_WIDTH * s, alpha=0.85, zorder=5, **round_line)
+        lines += ax.plot(rx, ry, color=color, lw=ROUTE_WIDTH * s, zorder=6, **round_line)
+        if arrows and not seg.off_map:  # the arrows aren't cut off at the edge like the line
+            _arrows(ax, xy, stop_xy, bg, s)
+    else:
+        width, style = (FLIGHT_WIDTH, FLIGHT_DASHES) if mode == "flying" else (SEA_WIDTH, SEA_DOTS)
+        lines += ax.plot(rx, ry, color=bg, lw=(width + 3) * s, alpha=0.5, zorder=5, solid_capstyle="round")
+        lines += ax.plot(rx, ry, color=color, lw=width * s, linestyle=style, dash_capstyle="round", zorder=6)
+    if seg.off_map:
+        x0, y0, x1, y1 = visible
+        for line in lines:
+            line.set_clip_path(plt.Rectangle((x0, y0), x1 - x0, y1 - y0, transform=ax.transData))
+
+    arc = _arc(xy)
+    halo = [patheffects.withStroke(linewidth=2.5 * s, foreground=bg)]
+    taken = []
+    # One plane per flight, not one per segment: cut at every stop, off-map ones too (out to an
+    # island and back is two flights, each with its own plane and distance). A run of sea legs is
+    # one voyage: a single boat, on its longest crossing (the middle of the whole run can be a stop).
+    ends = stop_xy + [tuple(float(v) for v in xy_of) for xy_of in off_xy]
+    boat_piece = None
+    for start, end in _stop_to_stop(xy, arc, ends):
+        piece = xy[start:end + 1]
+        if seg.off_map:
+            piece, exit_point = _on_map_part(piece, visible, s)
+            if piece is None:
+                continue
+            if exit_point is not None and off_map:
+                lonlat = seg.coords[start:end + 1]
+                far = lonlat[-1] if np.hypot(*(piece[0] - xy[start])) < 1e-9 else lonlat[0]
+                stop = min(off_map, key=lambda st: haversine_km((st.lon, st.lat), far))
+                # As route.Leg.km: a flight is the great-circle distance (the arc is only drawing),
+                # anything else the length of its line.
+                km = (haversine_km(lonlat[0], lonlat[-1]) if mode == "flying"
+                      else sum(haversine_km(p, q) for p, q in zip(lonlat, lonlat[1:])))
+                taken.append(_edge_label(ax, exit_point, stop.name, km, visible, theme, fonts, s))
+        if mode in GROUND or len(piece) < 2:
+            continue
+        piece_arc = _arc(piece)
+        if piece_arc[-1] < 0.4 * s:
+            continue  # too little shows for a symbol
+        if mode != "flying":
+            if boat_piece is None or piece_arc[-1] > boat_piece[1][-1]:
+                boat_piece = (piece, piece_arc)
+            continue
+        mid = piece_arc[-1] / 2
+        (x, y), (px, py), (qx, qy) = _at(piece, piece_arc, [mid, mid - 0.05 * s, mid + 0.05 * s])
+        fp = FontProperties(family=SYMBOL_FONT, size=20 * s)
+        ax.text(x, y, PLANE, rotation=np.degrees(np.arctan2(qy - py, qx - px)), rotation_mode="anchor",
+                ha="center", va="center", color=color, fontproperties=fp, zorder=6.5, path_effects=halo)
+    if boat_piece is not None:
+        piece, piece_arc = boat_piece
+        mid = piece_arc[-1] / 2
+        (x, y), (px, _), (qx, _) = _at(piece, piece_arc, [mid, mid - 0.05 * s, mid + 0.05 * s])
+        _boat(ax, x, y, facing=1 if qx >= px else -1, color=color, halo=halo, s=s)
+    return taken
+
+
+def _on_map_part(piece: np.ndarray, visible: tuple, s: float) -> tuple[np.ndarray | None, np.ndarray | None]:
+    """(the part of a leg to an off-map stop that lies on the map, the point where it leaves it).
+    The leg may go out (starts on the map) or come in (ends on it); the part keeps the leg's order.
+    (None, None) when nothing shows; no exit point when the "off-map" stop is on the map after all."""
+    x0, y0, x1, y1 = visible
+    arc = _arc(piece)
+    dense = _at(piece, arc, np.linspace(0, arc[-1], max(2, int(arc[-1] / (0.02 * s)) + 1)))
+    inside = (dense[:, 0] >= x0) & (dense[:, 0] <= x1) & (dense[:, 1] >= y0) & (dense[:, 1] <= y1)
+    if inside.all():
+        return dense, None
+    if inside[0]:
+        k = int(np.argmin(inside))  # the first point off the map
+        return dense[:k], dense[k - 1]
+    if inside[-1]:
+        k = len(inside) - 1 - int(np.argmin(inside[::-1]))  # the last point off the map
+        return dense[k + 1:], dense[k + 1]
+    return None, None
+
+
+def _edge_label(ax, point: np.ndarray, name: str, km: float, visible: tuple, theme: dict, fonts: dict,
+                s: float) -> tuple:
+    """The off-map stop's name and distance just inside the edge where its line leaves the map,
+    beside the line rather than on it. Returns the box it takes."""
+    x0, y0, x1, y1 = visible
+    title, sub = name.upper(), f"{km:,.0f} KM"
+    t_size, d_size = (v * s for v in TIER_SIZES["minor"])
+    w = max(len(title) * t_size * 0.70, len(sub) * d_size * 0.64) / 72
+    h = (t_size + d_size) / 72 + 0.03 * s
+    pad, gap = 0.3 * s, 0.12 * s
+    x, y = float(point[0]), float(point[1])
+    edge = min((x - x0, "left"), (x1 - x, "right"), (y - y0, "bottom"), (y1 - y, "top"))[1]
+    if edge in ("left", "right"):
+        bx0 = x0 + pad if edge == "left" else x1 - pad - w
+        by0 = y + gap if y + gap + h < y1 - pad else y - gap - h  # above the line, else below it
+    else:
+        by0 = y1 - pad - h if edge == "top" else y0 + pad
+        bx0 = x + gap if x + gap + w < x1 - pad else x - gap - w  # right of the line, else left of it
+    box = (bx0, by0, bx0 + w, by0 + h)
+    ha = "right" if bx0 + w / 2 > (x0 + x1) / 2 else "left"
+    tx = box[2] if ha == "right" else box[0]
+    halo = [patheffects.withStroke(linewidth=3 * s, foreground=theme["bg"])]
+    title_fp, sub_fp = fonts["bold"].copy(), fonts["light"].copy()
+    title_fp.set_size(t_size)
+    sub_fp.set_size(d_size)
+    ax.text(tx, box[3], title, ha=ha, va="top", color=theme["text"], fontproperties=title_fp, path_effects=halo, zorder=10)
+    ax.text(tx, box[1], sub, ha=ha, va="bottom", color=theme["text"], alpha=0.85, fontproperties=sub_fp,
+            path_effects=halo, zorder=10)
+    return box
+
+
+def _boat(ax, x: float, y: float, facing: int, color: str, halo: list, s: float) -> None:
+    """The BOAT shape sitting on the line at (x, y), upright (a boat on its side looks capsized),
+    facing right (1) or left (-1) with the way sailed."""
+    h = BOAT_HEIGHT * s
+    for part in BOAT:
+        pts = [(x + facing * px * h, y + (py + 0.1) * h) for px, py in part]
+        ax.add_patch(plt.Polygon(pts, closed=True, facecolor=color, edgecolor="none", zorder=6.5, path_effects=halo))
+
+
+def _stop_to_stop(xy: np.ndarray, arc: np.ndarray, stop_xy: list) -> list[tuple[int, int]]:
+    """(first, last) point index of each flight in a segment of several: the line is cut at the
+    points that lie on a stop."""
+    stops = np.array(stop_xy) if stop_xy else np.empty((0, 2))
+    cuts = [0] + [i for i in range(1, len(xy) - 1) if len(stops) and np.hypot(*(stops - xy[i]).T).min() < 1e-6]
+    cuts.append(len(xy) - 1)
+    return [(a, b) for a, b in zip(cuts, cuts[1:]) if arc[b] > arc[a]]
 
 
 # ── direction arrows ─────────────────────────────────────────────────────────────────────────────

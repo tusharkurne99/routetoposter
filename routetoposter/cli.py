@@ -83,7 +83,7 @@ def cmd_new(args) -> int:
     if link.mode not in ("driving", "flight"):
         print(f"Note: the link is for {link.mode}; the route is drawn along driving roads.")
     trip = Trip(stops=link.stops, link=link.url, title=default_title(link.stops),
-                route="straight" if link.mode == "flight" else "driving")
+                route="flying" if link.mode == "flight" else "driving")
     print(f"Found {len(trip.stops)} stops. Working out the route…")
     route = route_trip(trip.stops, trip.route)
     path = Path(args.output) if args.output else Path(f"{slug(trip.title)}.yaml")

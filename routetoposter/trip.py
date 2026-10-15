@@ -19,7 +19,9 @@ SIZES = {  # name -> (width, height, unit), portrait
 ORIENTATIONS = ("portrait", "landscape")
 FORMATS = ("png", "pdf", "svg")
 MAP_DETAILS = ("auto", "more", "less")
-ROUTE_MODES = ("driving", "straight")
+# How you travel. The trip's `route` is the default for every leg; a stop's own `route` (how you got
+# there) overrides it for that one leg, e.g. a flight or a ferry in the middle of a road trip.
+ROUTE_MODES = ("driving", "straight", "flying", "sailing")
 # Kinds a sight can be; each has its own map symbol (render.SIGHT_SYMBOL).
 SIGHT_KINDS = ("monastery", "temple", "church", "mosque", "fort", "palace", "viewpoint", "waterfall",
                "lake", "beach", "lighthouse", "peak", "park", "museum", "hot_spring", "dam", "sight")
@@ -43,6 +45,8 @@ class Stop:
     nights: int = 0  # nights slept here; 0 = passed through or visited
     label: bool = True  # False hides the name (the marker stays)
     via: bool = False  # True = only shapes the route: no marker, no label
+    route: str | None = None  # how you got here, if not the trip's route (ROUTE_MODES); None on the first stop
+    off_map: bool = False  # True = far away: the map leaves it out and the line to it runs off the edge
     sights_nearby: list[NearbySight] = field(default_factory=list)
     link_name: str | None = None  # Google's full name for the place; only written as a comment
 
@@ -105,7 +109,7 @@ def write_trip(trip: Trip, path: Path, route_lines: list[str], themes: list[str]
         f"dpi: {trip.dpi}   # 150 = screen, 300 = print, 600 = big print (ignored for pixel sizes)",
         f"format: {trip.format}   # png | pdf | svg",
         f"map_detail: {trip.map_detail}   # auto | more | less  (how many small roads are drawn)",
-        f"route: {trip.route}   # driving = follow the roads; straight = straight lines between stops",
+        f"route: {trip.route}   # driving = follow the roads; straight = straight lines; flying = arcs; sailing = dotted",
         "# runes_left: The road goes ever on and on   # pelennor_fields theme: runes down the left edge",
         "# runes_right: There and back again          # pelennor_fields theme: runes down the right edge",
         "",
@@ -117,11 +121,17 @@ def write_trip(trip: Trip, path: Path, route_lines: list[str], themes: list[str]
         "#     - {name: Key Monastery, lat: 32.29, lon: 78.01}   (exact spot, no lookup)",
         f"#   kinds: {', '.join(SIGHT_KINDS)}",
         "# label: false hides the name; via: true only shapes the route (no marker, no name).",
+        f"# route: how you got to this stop, when it isn't the route above: {' | '.join(ROUTE_MODES)}.",
+        "#   sailing goes round the land by itself; add via: true stops at sea to make it take another way.",
+        "# off_map: true leaves a far-away stop (say, a flight to an island) off the map: the line to it runs",
+        "#   off the edge with its name there, and the map shows the rest of the trip.",
         "# lat / lon come from the Google Maps link; leave them as they are.",
         "stops:",
     ]
     for stop in trip.stops:
         lines.append(f"  - name: {v(stop.name)}" + (f"   # {stop.link_name}" if stop.link_name else ""))
+        if stop.route:
+            lines.append(f"    route: {stop.route}")
         lines.append(f"    nights: {stop.nights}")
         lines.append("    sights_nearby: []" if not stop.sights_nearby else "    sights_nearby:")
         lines.extend(f"      - {_sight_yaml(s)}" for s in stop.sights_nearby)
@@ -129,6 +139,8 @@ def write_trip(trip: Trip, path: Path, route_lines: list[str], themes: list[str]
             lines.append("    label: false")
         if stop.via:
             lines.append("    via: true")
+        if stop.off_map:
+            lines.append("    off_map: true")
         lines.append(f"    lat: {stop.lat}")
         lines.append(f"    lon: {stop.lon}")
     lines += ["", "# ── Route (worked out from the link; for your information only) ──────"]
@@ -150,6 +162,7 @@ def write_trip(trip: Trip, path: Path, route_lines: list[str], themes: list[str]
     lines += ["", "# The Google Maps link these stops came from (kept for reference; not read again):",
               f"link: {v(trip.link)}"]
     text = "\n".join(_align_comment(line) for line in lines) + "\n"
+    path.parent.mkdir(parents=True, exist_ok=True)  # trips/ isn't in the repository
     path.write_text(text)
     return text
 
@@ -217,6 +230,8 @@ def load_trip(path: Path, themes: list[str]) -> Trip:
     trip.show = _read_show(raw.get("show") or {})
     if sum(not s.via for s in trip.stops) < 2:
         raise UserError("At least two stops must not be 'via: true'.")
+    if sum(not s.off_map for s in trip.stops) < 2:
+        raise UserError("At least two stops must be on the map (not 'off_map: true'): the map is fitted to them.")
     return trip
 
 
@@ -232,12 +247,17 @@ def _read_stop(item, number: int) -> Stop:
     lat, lon = item.get("lat"), item.get("lon")
     if not (_is_number(lat) and _is_number(lon) and -90 <= lat <= 90 and -180 <= lon <= 180):
         raise UserError(f"{where} needs lat and lon as numbers (they come from the Google Maps link).")
+    route = _choice(item, "route", ROUTE_MODES, None, where)
+    if route and number == 1:
+        raise UserError(f"{where} has 'route: {route}', but a stop's route is how you got there, and this is where "
+                        "you start. Put it on the next stop instead.")
     sights = item.get("sights_nearby") or []
     if not isinstance(sights, list):
         raise UserError(f"sights_nearby in {where} should be a list, one '- name' per line.")
     return Stop(name=name, lat=float(lat), lon=float(lon),
                 nights=_opt_int(item, "nights", minimum=0, where=where) or 0,
-                label=_bool(item, "label", True, where), via=_bool(item, "via", False, where),
+                label=_bool(item, "label", True, where), via=_bool(item, "via", False, where), route=route,
+                off_map=_bool(item, "off_map", False, where),
                 sights_nearby=[_read_sight(s, where) for s in sights])
 
 

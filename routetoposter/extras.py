@@ -141,11 +141,11 @@ def kind_from_tags(tags: dict) -> str:
     return next((kind for kind, matches in checks if matches), "sight")
 
 
-def passes_on_route(passes: list[Pass], route: list[Point]) -> list[Pass]:
-    """Passes within PASS_MAX_KM of the route. The same pass is often mapped twice; one copy is kept
-    (preferring the one with an altitude)."""
+def passes_on_route(passes: list[Pass], route: list[list[Point]]) -> list[Pass]:
+    """Passes within PASS_MAX_KM of the route (its lines on land, Route.ground_lines). The same pass
+    is often mapped twice; one copy is kept (preferring the one with an altitude)."""
     passes = [p for p in passes if p.name.casefold() not in UNNAMED_PASSES]
-    if not passes:
+    if not passes or not route:
         return []
     dist = distance_to_route_km([(p.lon, p.lat) for p in passes], route)
     near: list[Pass] = []
@@ -168,10 +168,11 @@ GENERIC_WORDS = {"tibetan", "buddhist", "buddha", "monastery", "gompa", "gonpa",
                  "the", "of", "shri", "sri", "mandir", "fort", "viewpoint", "view", "point", "stupa", "chorten"}
 
 
-def auto_sights(candidates: list[Sight], route: list[Point], stops: list[Point]) -> list[Sight]:
-    """Up to SIGHT_LIMIT sights within SIGHT_MAX_KM of the route: famous ones first, then the
-    closest. Skips generic names, near-duplicates, and sights that would hide under a stop marker."""
-    if not candidates:
+def auto_sights(candidates: list[Sight], route: list[list[Point]], stops: list[Point]) -> list[Sight]:
+    """Up to SIGHT_LIMIT sights within SIGHT_MAX_KM of the route (its lines on land): famous ones
+    first, then the closest. Skips generic names, near-duplicates, and sights that would hide under
+    a stop marker."""
+    if not candidates or not route:
         return []
     dist = distance_to_route_km([(x.lon, x.lat) for x in candidates], route)
     ranked = sorted(((d, x) for d, x in zip(dist, candidates)
@@ -220,12 +221,13 @@ def elevations(points: list[Point]) -> list[float]:
     return out
 
 
-def altitudes(stops: list[Point], route: list[Point], passes: list[Pass]) -> tuple[list[float], Pass | None, float]:
+def altitudes(stops: list[Point], route: list[list[Point]], passes: list[Pass]) -> tuple[list[float], Pass | None, float]:
     """(stop altitudes rounded to 10 m, an extra "Highest point" marker or None, the trip's highest
-    altitude). One request: the stops plus evenly spaced points along the route. Passes without an
-    altitude in OSM get one here. If the highest route sample isn't at a pass or a stop (which show
-    their altitude anyway), a "Highest point" marker is returned so the poster can show where it is."""
-    samples = resample(route, max(ELEVATION_BATCH - len(stops), 20))
+    altitude). One request: the stops plus evenly spaced points along the route's lines on land.
+    Passes without an altitude in OSM get one here. If the highest route sample isn't at a pass or a
+    stop (which show their altitude anyway), a "Highest point" marker is returned so the poster can
+    show where it is."""
+    samples = resample_lines(route, max(ELEVATION_BATCH - len(stops), 20))
     heights = elevations(list(stops) + samples)
     stop_heights = [round(h, -1) for h in heights[:len(stops)]]
     route_heights = heights[len(stops):]
@@ -233,6 +235,8 @@ def altitudes(stops: list[Point], route: list[Point], passes: list[Pass]) -> tup
     missing = [p for p in passes if p.ele is None]
     for p, h in zip(missing, elevations([(p.lon, p.lat) for p in missing]) if missing else []):
         p.ele = round(h, -1)
+    if not samples:  # flown or sailed all the way: the highest point is a stop
+        return stop_heights, None, max(stop_heights)
 
     i = int(np.argmax(route_heights))
     top_m, top_point = round(route_heights[i], -1), samples[i]
@@ -254,12 +258,29 @@ def resample(coords: list[Point], n: int) -> list[Point]:
     return list(zip(np.interp(targets, dist, a[:, 0]).tolist(), np.interp(targets, dist, a[:, 1]).tolist()))
 
 
-def distance_to_route_km(points: list[Point], route: list[Point]) -> np.ndarray:
-    """For each (lon, lat), the distance in km to the nearest point of the route line."""
-    r = np.asarray(route, dtype=float)
+def resample_lines(lines: list[list[Point]], n: int) -> list[Point]:
+    """About `n` points spread over several lines in proportion to their lengths (at least 2 each)."""
+    lengths = [_length_km(line) for line in lines]
+    total = sum(lengths) or 1
+    return [p for line, km in zip(lines, lengths) for p in resample(line, max(2, round(n * km / total)))]
+
+
+def _length_km(coords: list[Point]) -> float:
+    a = np.asarray(coords, dtype=float)
+    c = np.cos(np.radians(a[:, 1].mean()))
+    return float(np.hypot(np.diff(a[:, 0]) * c, np.diff(a[:, 1])).sum() * KM_PER_DEG)
+
+
+def distance_to_route_km(points: list[Point], route: list[list[Point]]) -> np.ndarray:
+    """For each (lon, lat), the distance in km to the nearest point of the route's lines."""
+    r = np.concatenate([np.asarray(line, dtype=float) for line in route])
     c = np.cos(np.radians(r[:, 1].mean()))
-    xy = np.column_stack((r[:, 0] * c, r[:, 1])) * KM_PER_DEG
-    a, b = xy[:-1], xy[1:]
+    a, b = [], []
+    for line in route:  # each line's own pieces; no piece joins the end of one line to the next
+        xy = np.column_stack((np.asarray(line)[:, 0] * c, np.asarray(line)[:, 1])) * KM_PER_DEG
+        a.append(xy[:-1])
+        b.append(xy[1:])
+    a, b = np.concatenate(a), np.concatenate(b)
     ab = b - a
     ab_len2 = np.maximum((ab ** 2).sum(axis=1), 1e-12)
     out = np.empty(len(points))

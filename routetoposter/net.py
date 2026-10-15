@@ -1,15 +1,46 @@
-"""HTTP requests with retries, and an on-disk JSON cache so nothing is downloaded twice."""
+"""HTTP requests with retries, and an on-disk JSON cache so nothing is downloaded twice.
+
+HTTPS is checked against the computer's own trusted certificates (truststore), not only Python's
+bundled list: a company network that inspects traffic (Cato, Zscaler, Netskope…) signs every site
+with its own certificate, which the computer trusts but Python's list doesn't.
+"""
 import hashlib
 import json
 import os
+import ssl
 import time
 import urllib.error
 import urllib.request
+from contextvars import ContextVar
 from pathlib import Path
+
+from .errors import UserError
+
+try:
+    import truststore
+
+    truststore.inject_into_ssl()
+except ImportError:  # an install from before truststore was a dependency: Python's own list only
+    pass
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 USER_AGENT = "routetoposter/0.2 (road-trip poster generator)"
 RETRY_STATUS = {429, 502, 503, 504}  # "busy" answers worth retrying
+# Where requests report what they're doing ("router.project-osrm.org didn't answer; retrying in 3s").
+# build.py sets it around each step so its status line can show it; unset, nothing is reported.
+NOTICE: ContextVar = ContextVar("notice", default=None)
+
+
+def notice(text: str) -> None:
+    """Tell the current status line (NOTICE), if there is one."""
+    say = NOTICE.get()
+    if say:
+        say(text)
+
+
+class CertificateProblem(UserError):
+    """HTTPS failed because the site's certificate isn't trusted. Retrying never helps, so it's
+    raised at once, and callers that fall back on another server let it through."""
 
 
 def fetch(url: str, data: bytes | None = None, timeout: int = 180, retries: int = 2,
@@ -30,9 +61,16 @@ def fetch(url: str, data: bytes | None = None, timeout: int = 180, retries: int 
                 raise
             last_error = e
         except (urllib.error.URLError, TimeoutError) as e:
+            if isinstance(getattr(e, "reason", None), ssl.SSLCertVerificationError):
+                raise CertificateProblem(
+                    f"Can't make a secure connection to {urllib.request.urlparse(url).hostname}: {e.reason.verify_message}.\n"
+                    "  This usually means a company network or VPN is inspecting web traffic. Try off the "
+                    "VPN, or\n  point SSL_CERT_FILE at a certificate file that includes your company's certificate.")
             last_error = e
         if attempt < retries:
-            time.sleep(3 * (attempt + 1))
+            pause = 3 * (attempt + 1)
+            notice(f"{urllib.request.urlparse(url).hostname} didn't answer ({last_error}); retrying in {pause}s")
+            time.sleep(pause)
     raise last_error
 
 

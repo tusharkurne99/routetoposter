@@ -75,6 +75,7 @@ ones you'll usually change:
 | `dpi` | `150` screen, `300` print, `600` big print |
 | `format` | `png`, `pdf` or `svg` |
 | `map_detail` | `auto`, `more` or `less`: how many small roads are drawn |
+| `route` | `driving` (follow the roads), `straight`, `flying` or `sailing`; also per stop, see below |
 | `show:` | Switches: stop labels, altitudes, passes, sights, river names, scale bar, arrows, stats line |
 
 A sight in `sights_nearby` can be written three ways:
@@ -91,6 +92,44 @@ If a name can't be found, it tells you and suggests the closest real names.
 
 Set `auto_sights: true` under `show:` to also add well-known monasteries, temples, forts and
 viewpoints along the route automatically.
+
+### Flights and boats
+
+A trip that isn't all road: put `route:` on a stop to say how you got **to** that stop. It
+overrides the `route` at the top for that one leg.
+
+```yaml
+stops:
+  - name: Quito
+  - name: Guayaquil                # driven (the top route: driving)
+  - name: Baltra
+    route: flying                  # a dashed arc with a plane
+  - name: Puerto Ayora
+    route: sailing                 # a dotted line
+```
+
+A sea crossing finds its own way round the land (from the OpenStreetMap coastline) and is drawn
+in smooth curves; to make it take another way, add stops with `via: true` out at sea. Passes, sights and the highest point are only looked for along
+the legs on land. Everything on the route is fitted on the poster, so a long flight makes the map
+zoom out to include it, unless that stop is `off_map`:
+
+### Far-away stops: `off_map`
+
+To keep the map on the road trip and only point at a far-away place (a flight out to an island),
+mark that stop `off_map: true`. The map is fitted to the other stops; the line to it heads off the
+edge in its true direction, with the place's name and distance where it leaves the map.
+
+```yaml
+  - name: Guayaquil
+  - name: Galápagos
+    route: flying
+    off_map: true
+    lat: -0.45
+    lon: -90.27
+```
+
+It works for any `route`, and for coming in as well as going out (put it first for "arrived from").
+At least two stops must stay on the map.
 
 ## 5. Check, preview, make
 
