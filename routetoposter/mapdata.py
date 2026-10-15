@@ -6,7 +6,7 @@ area (see `download_level` and `roads_to_draw`).
 
 Each Overpass request costs ~12 s of server overhead even when the answer is empty, so the time goes
 with the number of squares, not the amount of data. Two things keep it down: squares that are all
-sea are not asked for (the sea is worked out first, from one coastline query), and OVERPASS_SLOTS
+sea are not asked for (the sea is worked out first, from the coastline), and OVERPASS_SLOTS
 squares are downloaded at once.
 """
 import json
@@ -25,7 +25,8 @@ from shapely.geometry import LineString, Polygon, box
 from shapely.ops import linemerge, split, unary_union
 
 from .errors import UserError
-from .net import NOTICE, CertificateProblem, cache_path, cached_json, fetch_json, remember_area, saved_area
+from .net import NOTICE, CertificateProblem, cache_path, fetch_json, grid_rows, old_area_rows
+from .net import grid_squares as world_grid_squares
 
 OVERPASS = "https://overpass-api.de/api/interpreter"
 OVERPASS_BACKUPS = ["https://overpass.kumi.systems/api/interpreter",
@@ -76,6 +77,10 @@ FEATURES_VERSION = 3  # part of every cache key; bump when `classify`'s output c
 # Squares downloaded at the same time. overpass-api.de gives each address 2 slots; more requests at
 # once only queue or get "429 Too Many Requests".
 OVERPASS_SLOTS = 2
+# The coastline is saved in squares of this many degrees (see net.grid_rows). Bigger than the map's
+# squares: most of a coastline square is empty land or open sea, and each request costs the same
+# server overhead. A sailing leg's search area usually fits in one or two squares.
+COAST_GRID_DEG = 2.0
 # A square is skipped as sea when less than this share of its part of the poster is land. Not 0:
 # the sea polygons' edges and the square's edges meet with rounding noise.
 SEA_SKIP_LAND_SHARE = 1e-6
@@ -204,11 +209,7 @@ def fetch_features(bbox: Bbox, level: str, on_tile=None, sea: list | None = None
 
 def grid_squares(bbox: Bbox, level: str) -> list[Bbox]:
     """The squares of the GRID_DEG grid that overlap the area, as (south, west, north, east)."""
-    step = GRID_DEG[level]
-    s, w, n, e = bbox
-    rows = range(math.floor(s / step), math.ceil(n / step))
-    cols = range(math.floor(w / step), math.ceil(e / step))
-    return [(r * step, c * step, (r + 1) * step, (c + 1) * step) for r in rows for c in cols]
+    return world_grid_squares(bbox, GRID_DEG[level])
 
 
 def _saved_square(square: Bbox, level: str, bbox: Bbox) -> dict | None:
@@ -270,19 +271,6 @@ def _features_query(bbox: Bbox, level: str) -> str:
  relation["natural"~"^(water|glacier)$"]({b});
 );
 out geom qt;"""
-
-
-def make_tiles(bbox: Bbox, target_km2: float) -> list[Bbox]:
-    """Split the area into roughly square tiles of about `target_km2` each (for the sights query,
-    which is too heavy to run over a whole large poster at once)."""
-    s, w, n, e = bbox
-    c = math.cos(math.radians((s + n) / 2))
-    side = math.sqrt(target_km2)
-    ny = max(1, math.ceil((n - s) * KM_PER_DEG / side))
-    nx = max(1, math.ceil((e - w) * KM_PER_DEG * c / side))
-    lats = [s + (n - s) * j / ny for j in range(ny)] + [n]
-    lons = [w + (e - w) * i / nx for i in range(nx)] + [e]
-    return [(lats[j], lons[i], lats[j + 1], lons[i + 1]) for j in range(ny) for i in range(nx)]
 
 
 def overpass(query: str, patient: bool = True, notice=None) -> dict:
@@ -476,14 +464,22 @@ def printable_name(tags: dict) -> str | None:
 
 def fetch_sea(bbox: Bbox) -> list[list[list[list[float]]]]:
     """The sea inside the area, as polygons (see `sea_polygons`); empty when the area has no coast."""
-    bbox = saved_area("coastline", bbox)
-    b = ",".join(f"{v:.4f}" for v in bbox)
-    lines = cached_json("coastline", [round(v, 3) for v in bbox], lambda: [
-        _coords(el["geometry"]) for el in overpass(
-            f'[out:json][timeout:300];way["natural"="coastline"]({b});out geom;', patient=False)["elements"]
-        if el.get("geometry")])
-    remember_area("coastline", bbox)
+    lines = old_area_rows("coastline", bbox, lambda area: [round(v, 3) for v in area])
+    if lines is None:
+        lines, seen = [], set()
+        for line in grid_rows("coastline-grid", bbox, COAST_GRID_DEG, [], _coastline, OVERPASS_SLOTS):
+            ident = (tuple(line[0]), tuple(line[-1]), len(line))
+            if ident not in seen:  # a way crossing a square's edge comes back with both squares
+                seen.add(ident)
+                lines.append(line)
     return sea_polygons(lines, bbox)
+
+
+def _coastline(square: Bbox) -> list[list[list[float]]]:
+    b = ",".join(f"{v:.4f}" for v in square)
+    return [_coords(el["geometry"]) for el in overpass(
+        f'[out:json][timeout:300];way["natural"="coastline"]({b});out geom;', patient=False)["elements"]
+        if el.get("geometry")]
 
 
 def sea_polygons(coastlines: list[list[list[float]]], bbox: Bbox) -> list[list[list[list[float]]]]:

@@ -8,7 +8,7 @@ from routetoposter.build import stats_line, subtitle, trip_days
 from routetoposter.extras import Pass, Sight
 from routetoposter.layout import fit, output_dpi, poster_inches
 from routetoposter.pelennor_fields import BorderText
-from routetoposter.mapdata import download_level, make_tiles, roads_to_draw, sea_polygons
+from routetoposter.mapdata import download_level, fetch_sea, roads_to_draw, sea_polygons
 from routetoposter.render import Poster, PosterText, render
 from routetoposter.route import Leg, Route, decode_polyline6, describe, route_trip
 from routetoposter.style import load_fonts, load_theme
@@ -57,12 +57,6 @@ def test_dense_roads_are_dropped_but_main_roads_stay():
     assert roads == ["motorway", "primary"]
     assert roads_to_draw({"motorway": [line], "secondary": [line]}, 50, 100, 1, "auto") == \
         ["motorway", "primary", "secondary", "tertiary", "residential", "default"]
-
-
-def test_tiles_cover_the_area():
-    tiles = make_tiles((30, 76, 33, 79), 20_000)
-    assert len(tiles) > 1
-    assert min(t[0] for t in tiles) == 30 and max(t[2] for t in tiles) == 33
 
 
 def test_sea_is_on_the_right_of_the_coastline():
@@ -142,22 +136,62 @@ def test_unreachable_server_skips_a_sight_but_a_wrong_name_stops(monkeypatch, ca
         sights.locate_sights([stop])
 
 
-def test_a_saved_bigger_area_is_reused(tmp_path, monkeypatch):
-    from routetoposter.net import remember_area, saved_area
+def _old_area(tmp_path, kind, area):
+    import json
+    (tmp_path / "areas.json").write_text(json.dumps({kind: [list(area)]}))
+
+
+def test_an_area_saved_before_the_grid_is_still_used(tmp_path, monkeypatch):
+    from routetoposter import extras
+    from routetoposter.net import cache_path
 
     monkeypatch.setenv("ROUTETOPOSTER_CACHE", str(tmp_path))
-    remember_area("map-high", (30.0, 76.0, 33.0, 79.0))
-    assert saved_area("map-high", (30.5, 76.5, 32.5, 78.5)) == (30.0, 76.0, 33.0, 79.0)  # covered
-    assert saved_area("map-high", (29.0, 76.5, 32.5, 78.5)) == (29.0, 76.5, 32.5, 78.5)  # sticks out
-    assert saved_area("map-low", (30.5, 76.5, 32.5, 78.5)) == (30.5, 76.5, 32.5, 78.5)  # other detail level
+    old = (30.0, 76.0, 33.0, 79.0)
+    _old_area(tmp_path, "passes", old)
+    path = cache_path("passes", [[round(v, 4) for v in old], extras.POI_VERSION])
+    path.parent.mkdir(parents=True)
+    path.write_text('[["Kunzum La", 77.64, 32.4, "4551"], ["Far Away La", 78.9, 30.1, null]]')
+    monkeypatch.setattr(extras, "overpass", lambda *a, **k: pytest.fail("downloaded again"))
+    assert [p.name for p in extras.fetch_passes((32.0, 77.0, 33.0, 78.0))] == ["Kunzum La"]  # covered; only what's inside
 
 
-def test_shared_edges_with_rounding_noise_still_count_as_covered(tmp_path, monkeypatch):
-    from routetoposter.net import remember_area, saved_area
+def test_an_old_area_that_doesnt_cover_the_poster_is_not_used(tmp_path, monkeypatch):
+    from routetoposter.net import old_area_rows
 
     monkeypatch.setenv("ROUTETOPOSTER_CACHE", str(tmp_path))
-    remember_area("map-high", (30.5, 76.86575341102125, 32.8, 78.88426958897878))
-    assert saved_area("map-high", (30.6, 76.86575341102120, 32.7, 78.88426958897880))[0] == 30.5
+    _old_area(tmp_path, "coastline", (30.5, 76.86575341102125, 32.8, 78.88426958897878))
+    assert old_area_rows("coastline", (29.0, 77.0, 32.0, 78.0), lambda a: a) is None  # sticks out
+    assert old_area_rows("coastline", (30.6, 76.86575341102120, 32.7, 78.8842695889788), lambda a: a) is None  # covered, nothing saved
+
+
+def test_a_shifted_area_only_asks_for_the_squares_it_adds(tmp_path, monkeypatch):
+    from routetoposter import extras
+
+    monkeypatch.setenv("ROUTETOPOSTER_CACHE", str(tmp_path))
+    asked = []
+
+    def overpass(query, patient=True, notice=None):
+        asked.append(re.search(r"\(([-\d.,]+)\)", query).group(1))
+        return {"elements": [{"lat": 32.5, "lon": 77.5, "tags": {"name": "Rohtang"}, "type": "node"}]}
+
+    monkeypatch.setattr(extras, "overpass", overpass)
+    extras.fetch_sight_candidates((32.2, 77.2, 32.8, 77.8))
+    assert asked == ["32.0000,77.0000,33.0000,78.0000"]
+    [sight] = extras.fetch_sight_candidates((32.3, 77.3, 32.9, 78.6))  # moved and wider: one new square
+    assert asked[1:] == ["32.0000,78.0000,33.0000,79.0000"]
+    assert sight.name == "Rohtang"  # the same place from two squares, once
+
+
+def test_coastline_ways_from_two_squares_count_once(tmp_path, monkeypatch):
+    from routetoposter import mapdata
+
+    monkeypatch.setenv("ROUTETOPOSTER_CACHE", str(tmp_path))
+    # One coastline way north → south across two squares: Overpass returns it with each square.
+    way = {"type": "way", "geometry": [{"lon": 1.0, "lat": 3.0}, {"lon": 1.0, "lat": -1.0}]}
+    monkeypatch.setattr(mapdata, "overpass", lambda query, patient=True, notice=None: {"elements": [way]})
+    monkeypatch.setattr(mapdata, "COAST_GRID_DEG", 1.0)
+    bbox = (0.2, 0.5, 1.8, 1.5)
+    assert fetch_sea(bbox) == sea_polygons([[[1.0, 3.0], [1.0, -1.0]]], bbox)
 
 
 def test_a_huge_detour_is_flagged():
@@ -526,6 +560,53 @@ def test_a_run_of_sea_legs_gets_one_boat(tmp_path, monkeypatch):
                     passes=[], sights=[], text=PosterText("Islands", "", "", ""))
     render_module.render(str(tmp_path / "p.png"), poster, load_theme("terracotta"), load_fonts(), dpi=20)
     assert len(boats) == 2  # A→B→C→D is one voyage, F→G another
+
+
+def test_a_sea_crossing_is_planned_once(monkeypatch):
+    from routetoposter import route as route_module
+
+    planned = []
+    monkeypatch.setattr(route_module, "sea_route",
+                        lambda a, b, sea_for: planned.append(b.name) or [(a.lon, a.lat), (0.5, 0.2), (b.lon, b.lat)])
+    stops = [Stop("A", 0.0, 0.0), Stop("B", 1.0, 1.0, route="sailing"), Stop("C", 1.0, 2.0, route="sailing")]
+    first = route_trip(stops, "straight")
+    assert route_trip(stops, "straight").coords == first.coords and planned == ["B", "C"]
+    stops[2] = Stop("C", 1.2, 2.0, route="sailing")  # moved: only its own crossing again
+    route_trip(stops, "straight")
+    assert planned == ["B", "C", "C"]
+
+
+def _fake_osrm(asked):
+    def fetch_json(url, *a, **k):
+        asked.append(url)
+        points = [[float(v) for v in p.split(",")] for p in url.split("/driving/")[1].split("?")[0].split(";")]
+        return {"code": "Ok", "waypoints": [{"distance": 0}] * len(points),
+                "routes": [{"geometry": {"coordinates": points}, "legs": [{"distance": 1000, "duration": 60}] * (len(points) - 1)}]}
+    return fetch_json
+
+
+def test_moving_a_stop_only_routes_its_own_legs_again(monkeypatch):
+    from routetoposter import route as route_module
+
+    asked = []
+    monkeypatch.setattr(route_module, "fetch_json", _fake_osrm(asked))
+    stops = [Stop("A", 0.0, 0.0), Stop("B", 0.1, 0.1), Stop("C", 0.2, 0.2), Stop("D", 0.3, 0.3)]
+    assert len(route_trip(stops, "driving").legs) == 3 and len(asked) == 3  # one request per leg
+    stops[2] = Stop("C", 0.25, 0.2)
+    route = route_trip(stops, "driving")
+    assert len(asked) == 5 and "0.200000,0.250000" in asked[3] and "0.200000,0.250000" in asked[4]  # B→C, C→D
+    assert route.coords == [(0.0, 0.0), (0.1, 0.1), (0.2, 0.25), (0.3, 0.3)] and not route.warnings
+
+
+def test_a_run_saved_whole_by_an_earlier_version_is_still_used(monkeypatch):
+    from routetoposter import route as route_module
+    from routetoposter.net import cached_json
+
+    stops = [Stop("A", 0.0, 0.0), Stop("B", 0.1, 0.1), Stop("C", 0.2, 0.2)]
+    whole = route_module._osrm_url(stops)
+    cached_json("osrm", whole, lambda: _fake_osrm([])(whole))
+    monkeypatch.setattr(route_module, "fetch_json", lambda *a, **k: pytest.fail("routed again"))
+    assert len(route_trip(stops, "driving").legs) == 2
 
 
 def test_an_untrusted_certificate_stops_at_once_with_a_clear_message(monkeypatch):

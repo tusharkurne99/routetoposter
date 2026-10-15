@@ -1,9 +1,9 @@
 """The road line between the stops.
 
-Order of attempts:
-1. OSRM, the whole trip in one request (fast, gives every leg's distance and time).
-2. If OSRM fails, or had to move a stop more than SNAP_LIMIT_M to reach a road it can use, each leg
-   is routed on its own: OSRM, then Valhalla, then a straight line, each with a warning.
+Each leg is routed on its own and saved, so moving or adding a stop only re-routes the legs next
+to it: OSRM, then Valhalla if OSRM fails or had to move a stop more than SNAP_LIMIT_M to reach a
+road it can use, then a straight line, each with a warning. (A run saved whole, as earlier versions
+routed it, is still used as it is.)
 `route: straight` in the trip file skips routing and joins the stops with straight lines.
 
 A stop's own `route` (how you got there) overrides the trip's for that leg. The trip is cut into runs
@@ -16,8 +16,8 @@ import json
 import math
 from dataclasses import dataclass, field
 
-from .net import CertificateProblem, cached_json, fetch_json, notice
-from .sailing import sea_route
+from .net import CertificateProblem, cached_json, fetch_json, is_cached, notice
+from .sailing import SAILING_VERSION, sea_route
 from .trip import Stop
 
 OSRM = "https://router.project-osrm.org/route/v1/driving/"
@@ -145,15 +145,19 @@ def _route_run(stops: list[Stop], mode: str) -> Route:
 
 def _sail(stops: list[Stop]) -> Route:
     """Each sea crossing round the land (sailing.sea_route); a straight line with a warning where
-    that can't be worked out."""
+    that can't be worked out. Crossings are saved by their two ends: planning one takes seconds."""
     from .mapdata import fetch_sea  # mapdata is heavy (shapely) and only needed here
 
     coords: list[Point] = [(stops[0].lon, stops[0].lat)]
     legs, warnings = [], []
     for a, b in zip(stops, stops[1:]):
         try:
-            notice(f"sailing {a.name} → {b.name}: finding a way round the land")
-            line = sea_route(a, b, fetch_sea)
+            def plan(a=a, b=b):
+                notice(f"sailing {a.name} → {b.name}: finding a way round the land")
+                return sea_route(a, b, fetch_sea)
+
+            ends = [round(v, 6) for v in (a.lon, a.lat, b.lon, b.lat)]
+            line = cached_json("sea-route", [ends, SAILING_VERSION], plan)  # None (no way found) is saved too
             problem = "couldn't find a way round the land"
         except CertificateProblem:
             raise
@@ -162,22 +166,21 @@ def _sail(stops: list[Stop]) -> Route:
         if line is None:
             line = [(a.lon, a.lat), (b.lon, b.lat)]
             warnings.append(f"Sailing {a.name} → {b.name}: {problem}; drawn straight. Add via: true stops at sea to steer it.")
+        line = [tuple(p) for p in line]  # a saved one comes back as lists
         coords += line[1:]
         legs.append(Leg(a.name, b.name, sum(haversine_km(p, q) for p, q in zip(line, line[1:])), None, "sailing"))
     return Route(coords, legs, warnings, [Segment("sailing", coords)])
 
 
 def _drive(stops: list[Stop]) -> Route:
-    legs = len(stops) - 1
-    notice(f"OSRM: {stops[0].name} → {stops[-1].name}" + (f", {legs} legs at once" if legs > 1 else ""))
-    try:
-        return _osrm_whole_trip(stops)
-    except RoutingFailed as e:
-        note = f"{e} Routed each leg on its own instead."
-
+    if is_cached("osrm", _osrm_url(stops)):  # routed whole by an earlier version
+        try:
+            return _osrm_whole_trip(stops)
+        except RoutingFailed:
+            pass
     coords: list[Point] = []
     legs: list[Leg] = []
-    warnings = [note]
+    warnings: list[str] = []
     for i, (a, b) in enumerate(zip(stops, stops[1:]), 1):
         notice(f"leg {i}/{len(stops) - 1}: {a.name} → {b.name}")
         leg_coords, leg = _one_leg(a, b, warnings)
@@ -195,8 +198,7 @@ def _osrm_whole_trip(stops: list[Stop]) -> Route:
 def _osrm(stops: list[Stop]) -> tuple[list[Point], list[tuple[float, float]]]:
     """(line, [(km, hours) per leg]) from OSRM. Raises RoutingFailed when OSRM has no route or had to
     move a stop too far."""
-    points = ";".join(f"{s.lon:.6f},{s.lat:.6f}" for s in stops)
-    url = f"{OSRM}{points}?overview=full&geometries=geojson"
+    url = _osrm_url(stops)
     try:
         data = cached_json("osrm", url, lambda: fetch_json(url, timeout=60))
     except CertificateProblem:
@@ -213,16 +215,22 @@ def _osrm(stops: list[Stop]) -> tuple[list[Point], list[tuple[float, float]]]:
     return [tuple(c) for c in route["geometry"]["coordinates"]], legs
 
 
+def _osrm_url(stops: list[Stop]) -> str:
+    points = ";".join(f"{s.lon:.6f},{s.lat:.6f}" for s in stops)
+    return f"{OSRM}{points}?overview=full&geometries=geojson"
+
+
 def _one_leg(a: Stop, b: Stop, warnings: list[str]) -> tuple[list[Point], Leg]:
     """One leg: OSRM, else Valhalla, else a straight line. Adds a warning for a straight line."""
     try:
         coords, [(km, hours)] = _osrm([a, b])
         return coords, Leg(a.name, b.name, km, hours)
-    except RoutingFailed:
-        pass
+    except RoutingFailed as e:
+        osrm_problem = str(e)
     try:
         notice(f"{a.name} → {b.name}: OSRM has no road; asking Valhalla")
         coords, km, hours = _valhalla(a, b)
+        warnings.append(f"{a.name} → {b.name}: {osrm_problem} Used the Valhalla router instead.")
         return coords, Leg(a.name, b.name, km, hours)
     except CertificateProblem:
         raise

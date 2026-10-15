@@ -4,13 +4,16 @@ HTTPS is checked against the computer's own trusted certificates (truststore), n
 bundled list: a company network that inspects traffic (Cato, Zscaler, Netskope…) signs every site
 with its own certificate, which the computer trusts but Python's list doesn't.
 """
+import contextvars
 import hashlib
 import json
+import math
 import os
 import ssl
 import time
 import urllib.error
 import urllib.request
+from concurrent.futures import ThreadPoolExecutor
 from contextvars import ContextVar
 from pathlib import Path
 
@@ -107,31 +110,65 @@ def cached_json(kind: str, key, produce):
     return value
 
 
-# ── saved areas ──────────────────────────────────────────────────────────────────────────────────
-# Map data is cached per area (south, west, north, east). Another poster size or orientation needs a
-# slightly different area; if a bigger saved area covers it, that one is reused instead of
-# downloading again (what lies outside the page is simply not visible). cache/areas.json lists the
-# areas whose download finished, per kind of data.
+# ── the world grid ───────────────────────────────────────────────────────────────────────────────
+# Lookups over an area (coastline, passes, peaks, auto sights) are saved per square of a fixed world
+# grid, not per poster area: moving a stop, adding one or another poster size shifts the area a
+# little, and then only the squares it adds are downloaded. Trips that overlap share squares, and the
+# sailing legs share the coastline squares with the map. (The road map does the same with its own
+# squares: mapdata.fetch_features.)
 
-def saved_area(kind: str, bbox) -> tuple[float, float, float, float]:
-    """A finished area of this `kind` that covers `bbox`, or `bbox` itself if there is none."""
+Bbox = tuple[float, float, float, float]  # (south, west, north, east)
+
+
+def grid_squares(bbox: Bbox, step: float) -> list[Bbox]:
+    """The squares of the `step`-degree world grid that overlap the area, as (south, west, north, east)."""
+    s, w, n, e = bbox
+    rows = range(math.floor(s / step), math.ceil(n / step))
+    cols = range(math.floor(w / step), math.ceil(e / step))
+    return [(r * step, c * step, (r + 1) * step, (c + 1) * step) for r in rows for c in cols]
+
+
+def grid_rows(kind: str, bbox: Bbox, step: float, version: list, fetch_square, slots: int = 1) -> list:
+    """The rows `fetch_square(square)` returns for every grid square overlapping `bbox`, in grid
+    order; squares not saved yet are fetched `slots` at a time. A feature crossing a square's edge can
+    come back from both squares: dropping the copy is the caller's job. `version` goes in every key."""
+    squares = grid_squares(bbox, step)
+
+    def rows(square: Bbox) -> list:
+        return cached_json(kind, [[round(v, 4) for v in square], step, *version], lambda: fetch_square(square))
+
+    missing = [sq for sq in squares if not is_cached(kind, [[round(v, 4) for v in sq], step, *version])]
+    if missing:
+        with ThreadPoolExecutor(slots) as pool:
+            # copy_context: the status line (NOTICE) reaches the requests made in the threads.
+            futures = [pool.submit(contextvars.copy_context().run, rows, sq) for sq in missing]
+            try:
+                for future in futures:
+                    future.result()
+            except BaseException:  # a failed square (or Ctrl-C): don't start the rest; finished ones are saved
+                pool.shutdown(wait=False, cancel_futures=True)
+                raise
+    return [row for sq in squares for row in rows(sq)]
+
+
+def inside(bbox: Bbox, lon: float, lat: float) -> bool:
+    s, w, n, e = bbox
+    return s <= lat <= n and w <= lon <= e
+
+
+# ── areas saved before the grid ──────────────────────────────────────────────────────────────────
+# These lookups used to be saved per poster area, with cache/areas.json listing the finished areas.
+# An old area that covers the poster is still used, so trips made before the grid don't download again.
+
+def old_area_rows(kind: str, bbox: Bbox, key_of):
+    """What was saved for an old area of this `kind` that covers `bbox` (its key: `key_of(area)`), or None."""
     s, w, n, e = bbox
     tol = 1e-6  # degrees (~0.1 m): two sizes fitted to the same route share edges up to rounding
-    for S, W, N, E in _areas().get(kind, []):
-        if S <= s + tol and W <= w + tol and N >= n - tol and E >= e - tol:
-            return S, W, N, E
-    return tuple(float(v) for v in bbox)
-
-
-def remember_area(kind: str, bbox) -> None:
-    """Note that all data of this `kind` for `bbox` is now cached."""
-    areas = _areas()
-    entry = [float(v) for v in bbox]
-    if entry not in areas.setdefault(kind, []):
-        areas[kind].append(entry)
-        path = cache_dir() / "areas.json"
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(json.dumps(areas, indent=1))
+    for area in _areas().get(kind, []):
+        S, W, N, E = area
+        if S <= s + tol and W <= w + tol and N >= n - tol and E >= e - tol and is_cached(kind, key_of(area)):
+            return json.loads(cache_path(kind, key_of(area)).read_text())
+    return None
 
 
 def _areas() -> dict[str, list]:
