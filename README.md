@@ -57,6 +57,10 @@ You can also put the link on the command line, but then wrap it in **single quot
 straight line, which usually means OpenStreetMap is missing a road there (common near borders). If
 it's wrong, choose a nearby stop on a main road in Google Maps and make a new trip file.
 
+Each leg is routed on its own: by OSRM first, then by Valhalla if OSRM finds no road or has to move
+a stop more than 5 km to reach one, and as a straight line if neither works. Any of these is noted
+with `⚠` under the legs. A link copied in Google's flight mode starts the trip with `route: flying`.
+
 ## 4. Edit the trip file
 
 Open `trips/ladakh.yaml` in any text editor. Every setting has a comment saying what it does. The
@@ -153,6 +157,16 @@ from OpenStreetMap and other free services. Everything is saved in `cache/`, so 
 theme, size, title or nights) take seconds. Map data is saved in squares and routes leg by leg, so
 moving or adding a stop only downloads what changed around it.
 
+While the map downloads, a progress bar shows the parts done and the time left. Parts that are all
+sea are skipped. When OpenStreetMap's main server is busy, backup servers are tried by themselves.
+
+Two optional environment variables:
+
+| Variable | What it does |
+|---|---|
+| `ROUTETOPOSTER_OVERPASS` | Your own OpenStreetMap (Overpass) servers instead of the usual ones, comma-separated, tried in that order, e.g. `https://my-server/api/interpreter` |
+| `ROUTETOPOSTER_CACHE` | A folder to save downloads in instead of `cache/` |
+
 ## 6. The Pelennor Fields theme
 
 Pelennor Fields turns the poster into an old map in the style of Thrór's Map from The Hobbit:
@@ -204,7 +218,13 @@ Good to know:
 | `⚠ Couldn't look up mountain passes / '<sight>' …` | OpenStreetMap's server is busy or unreachable. The poster is still made; run it again later to add them. |
 | `Couldn't find these sights … did you mean …?` | Use one of the suggested names, fix the spelling, add `lat`/`lon`, or remove the sight. |
 | `"titel" isn't a setting. Did you mean "title"?` | A typo in the trip file; the message names the setting. |
-| `OpenStreetMap servers are busy or unreachable` while downloading the map | Wait a few minutes and run it again; the parts already downloaded are kept. |
+| `OpenStreetMap servers are busy or unreachable` while downloading the map | Wait a few minutes and run it again; the parts already downloaded are kept. Or set `ROUTETOPOSTER_OVERPASS` to another server. |
+| `No road route found from A to B; drawn as a straight line` | OpenStreetMap has no road there. If you flew or took a boat, put `route: flying` or `route: sailing` on B. |
+| `A → B: … Used the Valhalla router instead.` | Just a note: OSRM couldn't route that leg. Check its distance against Google Maps. |
+| `Sailing A → B: …; drawn straight` | The way round the land couldn't be worked out. Run it again later, or add `via: true` stops at sea to steer it. |
+| `At least two stops must be on the map` | Too many stops are `off_map: true`; the map needs two to fit around. |
+| `… has 'route: …', but a stop's route is how you got there` | The first stop can't have a `route`: move it to the next stop. |
+| `Can't make a secure connection to …` | A company network or VPN is inspecting web traffic. Run `.venv/bin/pip install -e ".[dev]"` again (an older install lacks the fix for this), try off the VPN, or point `SSL_CERT_FILE` at a certificate file that includes your company's certificate. |
 
 ## 8. Examples
 
