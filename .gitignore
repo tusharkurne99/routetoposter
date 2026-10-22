@@ -12,3 +12,4 @@ trips/
 
 # Local notes (design plan, code walkthrough)
 docs/
+.DS_Store
