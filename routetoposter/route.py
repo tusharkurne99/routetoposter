@@ -50,6 +50,7 @@ class Leg:
     km: float
     hours: float | None  # None for a straight line, a flight or a sea crossing
     mode: str = "driving"  # trip.ROUTE_MODES
+    off_map: bool = False  # to or from an `off_map` stop: left out of the poster's distance (Route.on_map_km)
 
 
 @dataclass
@@ -75,6 +76,11 @@ class Route:
     @property
     def km(self) -> float:
         return sum(leg.km for leg in self.legs)
+
+    @property
+    def on_map_km(self) -> float:
+        """The distance the poster states: the flight home from far away isn't part of the trip shown."""
+        return sum(leg.km for leg in self.legs if not leg.off_map)
 
     def ground_lines(self) -> list[list[Point]]:
         """The stretches on land (and on the map). A flight passes over mountains it doesn't cross,
@@ -119,6 +125,8 @@ def route_trip(stops: list[Stop], mode: str) -> Route:
         while end < len(kinds) and kinds[end] == kinds[start]:
             end += 1
         run = _route_run(stops[start:end + 1], kinds[start][0])
+        for leg in run.legs:
+            leg.off_map = kinds[start][1]
         for seg in run.segments:
             seg.off_map = kinds[start][1]
             seg.ends_on_map = (not stops[start].off_map, not stops[end].off_map)
@@ -182,7 +190,8 @@ def _drive(stops: list[Stop]) -> Route:
     legs: list[Leg] = []
     warnings: list[str] = []
     for i, (a, b) in enumerate(zip(stops, stops[1:]), 1):
-        notice(f"leg {i}/{len(stops) - 1}: {a.name} → {b.name}")
+        if not is_cached("osrm", _osrm_url([a, b])):  # a saved leg needs no word: nothing is downloaded
+            notice(f"leg {i}/{len(stops) - 1}: {a.name} → {b.name}")
         leg_coords, leg = _one_leg(a, b, warnings)
         coords.extend(leg_coords if not coords else leg_coords[1:])  # legs share their end/start point
         legs.append(leg)

@@ -9,7 +9,7 @@ from dataclasses import dataclass
 
 import numpy as np
 
-from .trip import SIZES, Trip
+from .trip import BLEED, SIZES, Trip
 
 # Where the route must fit, as fractions of the poster (x0, y0, x1, y1). The bottom ~30% is left
 # for the title block, as in maptoposter.
@@ -18,7 +18,6 @@ ROUTE_PAD = 0.04  # extra margin inside ROUTE_BOX, as a fraction of its size
 KM_PER_DEG = 111.32  # km per degree of latitude
 PIXEL_SIZE_DPI = 300  # pixel sizes (instagram…) are drawn at this dpi
 PREVIEW_LONG_EDGE_PX = 1200
-NICE_KM = [1, 2, 5, 10, 20, 25, 50, 100, 200, 250, 500, 1000]  # scale bar lengths to choose from
 
 
 @dataclass
@@ -59,6 +58,11 @@ class Frame:
 
     def km_per_inch(self) -> float:
         return KM_PER_DEG / self.k
+
+
+def bleed_inches(trip: Trip) -> float:
+    """How much of each edge the printer cuts off (trip.BLEED; 0 for most sizes)."""
+    return BLEED.get(trip.size, 0.0)
 
 
 def poster_inches(trip: Trip) -> tuple[float, float]:

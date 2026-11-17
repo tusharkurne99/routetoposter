@@ -37,6 +37,14 @@ def test_sizes_orientation_and_dpi():
     assert output_dpi(Trip(stops=STOPS), 12, 16, preview=True) == 75
 
 
+def test_vistaprint_sizes_include_the_bleed():
+    from routetoposter.layout import bleed_inches
+
+    trip = Trip(stops=STOPS, size="VP-18x24", orientation="landscape", dpi=300)
+    assert poster_inches(trip) == (24.5, 18.5) and bleed_inches(trip) == 0.25
+    assert bleed_inches(Trip(stops=STOPS, size="18x24")) == 0
+
+
 def test_route_fits_inside_the_map_area():
     frame = fit([(77.0, 32.0), (78.0, 32.5)], 12, 16)
     x, y = frame.project([77.0, 78.0], [32.0, 32.5])
@@ -84,6 +92,22 @@ def test_subtitle_days_and_stats():
     passes = [Pass("Kunzum La", 0, 0, 4551), Pass("Highest point", 0, 0, 4600)]
     assert stats_line(trip, route, passes, 4600) == "833 KM  ·  4 DAYS  ·  1 PASS  ·  HIGHEST 4,600 M"
     assert subtitle(Trip(stops=STOPS, subtitle=None)) == ""
+    imperial = Trip(stops=STOPS, units="imperial")
+    assert stats_line(imperial, route, passes, 4600) == "518 MI  ·  4 DAYS  ·  1 PASS  ·  HIGHEST 15,092 FT"
+
+
+def test_a_theme_can_colour_each_kind_of_leg():
+    galapagos, plain = load_theme("galapagos"), load_theme("terracotta")
+    assert galapagos["route_sailing"] != galapagos["route"] == galapagos["route_driving"]
+    assert plain["route_sailing"] == plain["route_flying"] == plain["route"]
+
+
+def test_scale_bar_is_a_round_number_of_km_or_miles():
+    from routetoposter.units import KM_PER_MILE, scale_length
+
+    assert scale_length(30, 2.0, "metric") == (50 / 30, 50, "KM")
+    length, n, word = scale_length(30, 2.0, "imperial")
+    assert (n, word) == (25, "MI") and length == pytest.approx(25 * KM_PER_MILE / 30)
 
 
 def test_render_offline(tmp_path):
@@ -210,7 +234,7 @@ def test_passes_are_read_with_their_positions(tmp_path, monkeypatch):
     answer = {"elements": [{"type": "node", "id": 1, "lat": 34.2787, "lon": 77.6047,
                             "tags": {"mountain_pass": "yes", "name": "Khardung La", "ele": "5359"}}]}
     queries = []
-    monkeypatch.setattr(extras, "overpass", lambda query, patient=True, notice=None: queries.append(query) or answer)
+    monkeypatch.setattr(extras, "overpass", lambda query, patient=True, notice=None, light=False: queries.append(query) or answer)
     [khardung] = extras.fetch_passes((34.0, 77.0, 35.0, 78.0))
     assert (khardung.name, khardung.lon, khardung.lat, khardung.ele) == ("Khardung La", 77.6047, 34.2787, 5359)
     assert queries[0].endswith("out;")  # `out tags;` would leave out the positions
@@ -238,6 +262,61 @@ def test_another_size_only_downloads_the_new_squares(tmp_path, monkeypatch):
     assert len(asked) == 2
     mapdata.fetch_features((31.1, 76.8, 31.4, 77.8), "high")  # wider: one more square
     assert len(asked) == 3
+
+
+def _age(path, days):
+    import os, time
+    old = time.time() - days * 86400
+    os.utime(path, (old, old))
+
+
+def test_saved_downloads_are_kept_until_cache_days(monkeypatch):
+    from routetoposter.net import cache_path, cached_json
+
+    asked = []
+    cached_json("t", "k", lambda: asked.append(1) or "first")
+    _age(cache_path("t", "k"), 200)
+    assert cached_json("t", "k", lambda: pytest.fail("no limit set: kept forever")) == "first"
+    monkeypatch.setenv("ROUTETOPOSTER_CACHE_DAYS", "365")
+    assert cached_json("t", "k", lambda: pytest.fail("200 days < 365")) == "first"
+    monkeypatch.setenv("ROUTETOPOSTER_CACHE_DAYS", "120")
+    assert cached_json("t", "k", lambda: "second") == "second"  # too old: downloaded again
+    assert cached_json("t", "k", lambda: pytest.fail("just saved")) == "second"
+    monkeypatch.setenv("ROUTETOPOSTER_CACHE_DAYS", "0")
+    _age(cache_path("t", "k"), 5000)
+    assert cached_json("t", "k", lambda: pytest.fail("0 = forever")) == "second"
+
+
+def test_an_old_copy_is_used_when_the_refresh_fails(monkeypatch):
+    from routetoposter import mapdata
+    from routetoposter.net import cache_path, cached_json
+
+    def down():
+        raise OSError("offline")
+
+    cached_json("t", "k", lambda: "saved")
+    _age(cache_path("t", "k"), 200)
+    monkeypatch.setenv("ROUTETOPOSTER_CACHE_DAYS", "120")
+    assert cached_json("t", "k", down) == "saved"
+
+    road = {"type": "way", "tags": {"highway": "primary"}, "geometry": [{"lon": 77.1, "lat": 31.2}, {"lon": 77.2, "lat": 31.2}]}
+    monkeypatch.setattr(mapdata, "overpass", lambda *a, **k: {"elements": [road]})
+    bbox = (31.1, 77.05, 31.4, 77.3)
+    mapdata.fetch_features(bbox, "high")
+    for path in (cache_path("osm-grid", mapdata._square_key(sq, "high")) for sq in mapdata.grid_squares(bbox, "high")):
+        _age(path, 200)
+    assert mapdata.tiles_status(bbox, "high") == (0, 1, 0)  # counted as to download
+    monkeypatch.setattr(mapdata, "overpass", lambda *a, **k: down())
+    assert len(mapdata.fetch_features(bbox, "high")["primary"]) == 1
+
+
+def test_bad_cache_days_is_a_user_error(monkeypatch):
+    from routetoposter.errors import UserError
+    from routetoposter.net import cache_max_days
+
+    monkeypatch.setenv("ROUTETOPOSTER_CACHE_DAYS", "a year")
+    with pytest.raises(UserError):
+        cache_max_days()
 
 
 def test_squares_that_are_all_sea_are_not_downloaded(tmp_path, monkeypatch):
@@ -447,6 +526,44 @@ def test_a_server_that_is_down_is_skipped_at_once(monkeypatch):
     assert notices[0].startswith("overpass-api.de isn't answering") and "backup" in notices[-1]
 
 
+def test_light_lookups_wait_briefly_and_ask_every_server(monkeypatch):
+    from routetoposter import mapdata
+
+    asked = []
+
+    def slow(url, body, timeout, retries):
+        asked.append((url, timeout))
+        raise TimeoutError("timed out")
+
+    monkeypatch.setattr(mapdata, "_reachable", lambda url: True)
+    monkeypatch.setattr(mapdata, "fetch_json", slow)
+    with pytest.raises(mapdata.UserError):
+        mapdata.overpass("q", patient=False, light=True)
+    assert asked == [(url, mapdata.LIGHT_TIMEOUT) for url in mapdata.overpass_servers()]
+
+
+def test_peaks_come_from_wikidata_when_overpass_fails(monkeypatch):
+    from routetoposter import extras
+    from routetoposter.errors import UserError
+
+    monkeypatch.setattr(extras, "_overpass_gave_up", [0.0])
+
+    def down(*a, **k):
+        raise UserError("busy")
+
+    answer = {"results": {"bindings": [
+        {"item": {"value": "Q1"}, "coord": {"value": "Point(-9.7428 51.9989)"}, "ele": {"value": "1038.6"}},
+        {"item": {"value": "Q1"}, "coord": {"value": "Point(-9.7428 51.9989)"}, "ele": {"value": "1038.6"}}]}}
+    monkeypatch.setattr(extras, "overpass", down)
+    monkeypatch.setattr(extras, "fetch_json", lambda url, timeout: answer)
+    assert extras.fetch_peaks((51.5, -10.0, 52.5, -9.0)) == [(-9.7428, 51.9989, 1038.6)]
+    monkeypatch.setattr(extras, "fetch_json", lambda *a, **k: pytest.fail("saved"))
+    assert len(extras.fetch_peaks((51.5, -10.0, 52.5, -9.0))) == 1
+    monkeypatch.setattr(extras, "overpass", lambda *a, **k: pytest.fail("Overpass just failed: not asked again"))
+    monkeypatch.setattr(extras, "fetch_json", lambda url, timeout: answer)
+    extras.fetch_peaks((53.5, -10.0, 54.5, -9.0))  # another square
+
+
 def test_own_overpass_server(monkeypatch):
     from routetoposter import mapdata
 
@@ -525,7 +642,9 @@ def test_an_off_map_stop_is_left_out_of_the_fit_and_the_ground():
     assert route.fit_coords()[:2] == on_map and route.ground_lines() == [on_map]
     lead = route.fit_coords()[2]  # a little way out along the flight, so the map reaches toward it
     assert len(route.fit_coords()) == 3 and -80.5 < lead[0] < -80.0  # west of Guayaquil, by ~15% of the trip
-    assert route.km > 1300  # the flight still counts
+    assert route.km > 1300  # the flight is part of the whole trip…
+    assert route.on_map_km == route.legs[0].km < 300  # …but not of the distance on the poster
+    assert stats_line(Trip(stops=OFF_MAP), route, [], None).startswith(f"{route.legs[0].km:,.0f} KM")
 
 
 def test_a_line_to_an_off_map_stop_is_cut_at_the_edge_going_out_or_coming_in():

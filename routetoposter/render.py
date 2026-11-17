@@ -16,6 +16,9 @@ from dataclasses import dataclass, field
 import matplotlib
 
 matplotlib.use("Agg")  # draw to files only; no window
+# PDFs embed real (TrueType) fonts, not matplotlib's default Type 3 glyph drawings, which some print
+# shops' preflight rejects or rasterises.
+matplotlib.rcParams["pdf.fonttype"] = 42
 import matplotlib.pyplot as plt  # noqa: E402
 import numpy as np  # noqa: E402
 from matplotlib import colors as mcolors  # noqa: E402
@@ -27,11 +30,12 @@ from matplotlib.path import Path as MplPath  # noqa: E402
 
 from . import pelennor_fields  # noqa: E402
 from .extras import Pass, Sight  # noqa: E402
-from .layout import KM_PER_DEG, NICE_KM, ROUTE_BOX, Frame  # noqa: E402
+from .layout import KM_PER_DEG, ROUTE_BOX, Frame  # noqa: E402
 from .mapdata import LINE_WIDTH_PT, is_latin  # noqa: E402
 from .pelennor_fields import BorderText  # noqa: E402
 from .route import GROUND, Route, haversine_km  # noqa: E402
 from .trip import Show, Stop  # noqa: E402
+from .units import distance, height, scale_length  # noqa: E402
 
 ROUTE_WIDTH, CASING_WIDTH = 4.0, 9.0
 # Flights: a dashed arc with a plane at the middle. Sea crossings: round dots. Both thinner than the
@@ -78,6 +82,8 @@ class Poster:
     show: Show = field(default_factory=Show)
     peaks: list = field(default_factory=list)  # (lon, lat, metres), for Pelennor Fields mountains
     border: BorderText | None = None  # what the runes in a Pelennor Fields frame say
+    units: str = "metric"  # metric | imperial: how distances and altitudes are written
+    bleed: float = 0.0  # inches the printer cuts off each edge: the scale bar, footer and frames move in by this
 
 
 @dataclass
@@ -117,12 +123,12 @@ def render(path: str, poster: Poster, theme: dict, fonts: dict, dpi: float) -> N
 
     _draw_map(ax, poster, theme, s, proj)
     if pelennor:
-        lay = pelennor_fields.layout(poster.text, s)
+        lay = pelennor_fields.layout(poster.text, s, poster.bleed)
         pelennor_fields.draw_mountains(ax, poster, theme, s, proj, route_xy, lay)
         map_area = (lay.inner + 0.2 * s, lay.map_bottom + 0.2 * s, W - lay.inner - 0.2 * s, H - lay.inner - 0.2 * s)
         visible = (lay.inner, lay.map_bottom, W - lay.inner, H - lay.inner)  # inside the frame
     else:
-        layout, text_top = _text_layout(poster.text, s)
+        layout, text_top = _text_layout(poster.text, s, poster.bleed)
         solid_top = text_top + 0.25 * s
         map_area = (0.3 * s, solid_top + 0.35 * s, W - 0.3 * s, 0.86 * H)
         visible = (0, solid_top, W, H)  # above the title band
@@ -134,10 +140,10 @@ def render(path: str, poster: Poster, theme: dict, fonts: dict, dpi: float) -> N
     for seg in poster.route.segments:
         taken += _route_line(ax, proj(seg.coords), seg, theme, fonts, s, show.arrows, stop_xy,
                              off_map if seg.off_map else [], visible,
-                             [frame.project(st.lon, st.lat) for st in off_map] if seg.off_map else [])
+                             [frame.project(st.lon, st.lat) for st in off_map] if seg.off_map else [], poster.units)
 
-    labels = (_stop_markers(ax, frame, shown, theme, s, show.stop_labels)
-              + _pass_markers(ax, frame, poster.passes, theme, s)
+    labels = (_stop_markers(ax, frame, shown, theme, s, show.stop_labels, poster.units)
+              + _pass_markers(ax, frame, poster.passes, theme, s, poster.units)
               + _sight_markers(ax, frame, poster.sights, theme, s))
     labels.sort(key=lambda lb: ({"major": 0, "minor": 1, "small": 2}[lb.tier], lb.optional))
     placed = _place_labels(ax, labels, theme, fonts, s, taken)
@@ -153,7 +159,7 @@ def render(path: str, poster: Poster, theme: dict, fonts: dict, dpi: float) -> N
         _fade(ax, theme["gradient_color"], W, 0.88 * H, H, solid_low=False)
         _draw_text(fig, ax, poster.text, layout, theme, fonts, s, W, H)
         if show.scale_bar:
-            _scale_bar(ax, frame, theme, fonts, s)
+            _scale_bar(ax, frame, theme, fonts, s, poster.units, poster.bleed)
     fig.savefig(path, dpi=dpi, facecolor=bg)
     plt.close(fig)
 
@@ -194,8 +200,8 @@ def is_loop(stops: list[Stop]) -> bool:
     return len(stops) > 2 and haversine_km((stops[0].lon, stops[0].lat), (stops[-1].lon, stops[-1].lat)) < LOOP_KM
 
 
-def _altitude(m: float | None) -> str:
-    return f"{m:,.0f} M" if m is not None else ""
+def _altitude(m: float | None, units: str) -> str:
+    return height(m, units) if m is not None else ""
 
 
 def _nights(n: int) -> str:
@@ -212,7 +218,7 @@ def _radius(diameter_pt: float, s: float) -> float:
 
 
 def _stop_markers(ax, frame: Frame, stops: list[tuple[Stop, float | None]], theme: dict, s: float,
-                  with_labels: bool) -> list[Label]:
+                  with_labels: bool, units: str) -> list[Label]:
     """Draw the stop markers and return their labels (none when `with_labels` is False; a stop
     with `label: false` never gets one).
 
@@ -243,30 +249,30 @@ def _stop_markers(ax, frame: Frame, stops: list[tuple[Stop, float | None]], them
                 role = "FINISH"
             else:
                 role = "START"
-            sub, tier, r = _join(role, _altitude(height), _nights(nights)), "major", _radius(22 if loop else 13, s)
+            sub, tier, r = _join(role, _altitude(height, units), _nights(nights)), "major", _radius(22 if loop else 13, s)
         elif not any_nights:
             ax.scatter([x], [y], s=(8 * s) ** 2, facecolors=bg, edgecolors=route, linewidths=2.4 * s, zorder=7)
-            sub, tier, r = _altitude(height), "major", _radius(8, s)
+            sub, tier, r = _altitude(height, units), "major", _radius(8, s)
         elif nights:
             ax.scatter([x], [y], s=(12 * s) ** 2, facecolors=route, edgecolors=bg, linewidths=1.5 * s, zorder=7)
             ax.scatter([x], [y], s=(4.5 * s) ** 2, facecolors=bg, edgecolors="none", zorder=7.1)
-            sub, tier, r = _join(_altitude(height), _nights(nights)), "major", _radius(12, s)
+            sub, tier, r = _join(_altitude(height, units), _nights(nights)), "major", _radius(12, s)
         else:
             ax.scatter([x], [y], s=(6 * s) ** 2, facecolors=route, edgecolors=bg, linewidths=1.2 * s, zorder=7)
-            sub, tier, r = _altitude(height), "minor", _radius(6, s)
+            sub, tier, r = _altitude(height, units), "minor", _radius(6, s)
         if with_labels and st.label:
             labels.append(Label(x, y, st.name.upper(), sub, tier, r))
     return labels
 
 
-def _pass_markers(ax, frame: Frame, passes: list[Pass], theme: dict, s: float) -> list[Label]:
+def _pass_markers(ax, frame: Frame, passes: list[Pass], theme: dict, s: float, units: str) -> list[Label]:
     """▲ for each pass (and the "Highest point" marker), with its altitude."""
     labels = []
     for p in passes:
         x, y = (float(v) for v in frame.project(p.lon, p.lat))
         ax.scatter([x], [y], marker="^", s=(9 * s) ** 2, facecolors=theme["text"], edgecolors=theme["bg"],
                    linewidths=1.2 * s, zorder=7.5)
-        labels.append(Label(x, y, p.name.upper(), _altitude(p.ele), "minor", _radius(9, s)))
+        labels.append(Label(x, y, p.name.upper(), _altitude(p.ele, units), "minor", _radius(9, s)))
     return labels
 
 
@@ -346,7 +352,7 @@ def _overlap(a, b) -> bool:
 # ── the route ────────────────────────────────────────────────────────────────────────────────────
 
 def _route_line(ax, xy: np.ndarray, seg, theme: dict, fonts: dict, s: float, arrows: bool, stop_xy: list,
-                off_map: list[Stop], visible: tuple, off_xy: list = ()) -> list[tuple]:
+                off_map: list[Stop], visible: tuple, off_xy: list = (), units: str = "metric") -> list[tuple]:
     """One Segment of the route on a casing in the background colour (which keeps it clear of the
     roads under it). On land: the solid line with direction arrows. A flight: a dashed arc with a
     plane in the middle pointing the way flown (the arc's bend already shows it's a flight). A sea
@@ -355,7 +361,8 @@ def _route_line(ax, xy: np.ndarray, seg, theme: dict, fonts: dict, s: float, arr
     A Segment to or from an `off_map` stop is cut off at the edge of the `visible` map (x0, y0, x1,
     y1); its symbol goes in the middle of the part that shows, and the far stop's name and distance
     go where the line leaves the map. Returns the boxes of those names."""
-    bg, color, mode = theme["bg"], theme["route"], seg.mode
+    bg, mode = theme["bg"], seg.mode
+    color = theme[f"route_{mode}"]
     rx, ry = xy[:, 0], xy[:, 1]
     lines = []
     if mode in GROUND:
@@ -395,7 +402,7 @@ def _route_line(ax, xy: np.ndarray, seg, theme: dict, fonts: dict, s: float, arr
                 # anything else the length of its line.
                 km = (haversine_km(lonlat[0], lonlat[-1]) if mode == "flying"
                       else sum(haversine_km(p, q) for p, q in zip(lonlat, lonlat[1:])))
-                taken.append(_edge_label(ax, exit_point, stop.name, km, visible, theme, fonts, s))
+                taken.append(_edge_label(ax, exit_point, stop.name, km, visible, theme, fonts, s, units))
         if mode in GROUND or len(piece) < 2:
             continue
         piece_arc = _arc(piece)
@@ -438,11 +445,11 @@ def _on_map_part(piece: np.ndarray, visible: tuple, s: float) -> tuple[np.ndarra
 
 
 def _edge_label(ax, point: np.ndarray, name: str, km: float, visible: tuple, theme: dict, fonts: dict,
-                s: float) -> tuple:
+                s: float, units: str) -> tuple:
     """The off-map stop's name and distance just inside the edge where its line leaves the map,
     beside the line rather than on it. Returns the box it takes."""
     x0, y0, x1, y1 = visible
-    title, sub = name.upper(), f"{km:,.0f} KM"
+    title, sub = name.upper(), distance(km, units)
     t_size, d_size = (v * s for v in TIER_SIZES["minor"])
     w = max(len(title) * t_size * 0.70, len(sub) * d_size * 0.64) / 72
     h = (t_size + d_size) / 72 + 0.03 * s
@@ -663,13 +670,11 @@ def _water_labels(ax, frame: Frame, features: dict, route_xy: np.ndarray, placed
 
 # ── scale bar, fades, title block ────────────────────────────────────────────────────────────────
 
-def _scale_bar(ax, frame: Frame, theme: dict, fonts: dict, s: float) -> None:
-    """A north arrow and a scale bar (a round number of km, at most 2 in long) in the bottom-left."""
+def _scale_bar(ax, frame: Frame, theme: dict, fonts: dict, s: float, units: str, bleed: float = 0.0) -> None:
+    """A north arrow and a scale bar (a round number of km or miles, at most 2 in long) in the bottom-left."""
     color = theme["text"]
-    km_per_inch = KM_PER_DEG / frame.k
-    km = max((n for n in NICE_KM if n / km_per_inch <= 2.0 * s), default=NICE_KM[0])
-    length = km / km_per_inch
-    x, y, tick = 0.75 * s, 0.32 * s, 0.05 * s
+    length, number, word = scale_length(KM_PER_DEG / frame.k, 2.0 * s, units)
+    x, y, tick = 0.75 * s + bleed, 0.32 * s + bleed, 0.05 * s
 
     ax.plot([x, x + length], [y, y], color=color, lw=0.9 * s, solid_capstyle="butt", zorder=11)
     for f in (0, 0.5, 1):
@@ -677,10 +682,10 @@ def _scale_bar(ax, frame: Frame, theme: dict, fonts: dict, s: float) -> None:
     fp = fonts["light"].copy()
     fp.set_size(6.5 * s)
     ax.text(x, y + tick * 1.6, "0", ha="center", va="bottom", color=color, alpha=0.8, fontproperties=fp, zorder=11)
-    ax.text(x + length, y + tick * 1.6, f"{km} KM", ha="center", va="bottom", color=color, alpha=0.8,
+    ax.text(x + length, y + tick * 1.6, f"{number} {word}", ha="center", va="bottom", color=color, alpha=0.8,
             fontproperties=fp, zorder=11)
 
-    nx, base, top, half = 0.35 * s, y - 0.02 * s, y + 0.2 * s, 0.045 * s
+    nx, base, top, half = 0.35 * s + bleed, y - 0.02 * s, y + 0.2 * s, 0.045 * s
     ax.fill([nx - half, nx, nx], [base, top, base + 0.04 * s], color=color, zorder=11, lw=0)
     ax.fill([nx, nx + half, nx], [top, base, base + 0.04 * s], facecolor=theme["bg"], edgecolor=color,
             lw=0.6 * s, zorder=11)
@@ -708,12 +713,12 @@ def spaced_title(text: str) -> str:
     return "  ".join(text) if text.isascii() else text
 
 
-def _text_layout(text: PosterText, s: float) -> tuple[dict, float]:
+def _text_layout(text: PosterText, s: float, bleed: float = 0.0) -> tuple[dict, float]:
     """Stack the title block up from the bottom margin: footer, stats, subtitle, rule, title. Empty
     lines take no room. Returns ({"y": baselines, "size": points}, top of the block in inches)."""
     sizes = {"footer": 10.5 * s, "stats": 12.5 * s, "subtitle": 18 * s,
              "title": 60 * s * min(1.0, 10 / max(len(text.title), 1))}
-    y = {"footer": 0.6 * s}
+    y = {"footer": 0.6 * s + bleed}
     y["stats"] = y["footer"] + sizes["footer"] / 72 * 2.2
     y["subtitle"] = y["stats"] + (sizes["stats"] / 72 * 2.4 if text.stats else 0)
     y["rule"] = y["subtitle"] + (sizes["subtitle"] / 72 * 1.7 if text.subtitle else sizes["stats"] / 72 * 0.6)
@@ -742,5 +747,5 @@ def _draw_text(fig, ax, text: PosterText, layout: dict, theme: dict, fonts: dict
                  fontproperties=font("regular", size["stats"]), zorder=11)
     fig.text(0.5, y["footer"] / H, text.footer, ha="center", color=color, alpha=0.7,
              fontproperties=font("light", size["footer"]), zorder=11)
-    fig.text(1 - 0.25 * s / W, 0.2 * s / H, "© OpenStreetMap contributors", ha="right", color=color,
-             alpha=0.5, fontproperties=font("light", 6.5 * s), zorder=11)
+    # fig.text(1 - 0.25 * s / W, 0.2 * s / H, "© OpenStreetMap contributors", ha="right", color=color,
+    #         alpha=0.5, fontproperties=font("light", 6.5 * s), zorder=11)

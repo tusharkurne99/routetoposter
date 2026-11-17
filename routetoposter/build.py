@@ -8,8 +8,9 @@ import threading
 import time
 from contextlib import contextmanager
 
+from . import units
 from .extras import altitudes, auto_sights, fetch_passes, fetch_peaks, fetch_sight_candidates, passes_on_route
-from .layout import Frame, fit, poster_inches
+from .layout import Frame, bleed_inches, fit, poster_inches
 from .mapdata import download_level, fetch_features, fetch_sea, roads_to_draw, tiles_status
 from .net import NOTICE
 from .pelennor_fields import BorderText
@@ -23,15 +24,20 @@ MAP_SHARE = 0.75  # roughly the share of the poster that shows map (the rest is 
 STOP_PASS_KM = 2.0  # a pass this close to a stop is that stop
 
 
-def build_poster(trip: Trip, peaks: bool = False) -> tuple[Poster, list[Found]]:
-    """Everything needed to draw `trip`, plus where each sights_nearby entry was found. `peaks`:
-    also look up named mountain peaks (the Pelennor Fields style draws mountains on them)."""
+def build_poster(trip: Trip) -> tuple[Poster, list[Found]]:
+    """Everything needed to draw `trip`, plus where each sights_nearby entry was found. Named
+    mountain peaks are looked up for every theme, though only the Pelennor Fields style draws them:
+    the lookup is small, and then switching to that theme later downloads nothing."""
     print("1/4  Route")
     with looking_up("the route"):
         route = route_trip(trip.stops, trip.route)
     for warning in route.warnings:
         print(f"     ⚠ {warning}")
-    print(f"     {route.km:,.0f} km")
+    shown = units.distance(route.on_map_km, trip.units).lower()
+    if route.on_map_km < route.km:
+        print(f"     {shown} on the map ({units.distance(route.km, trip.units).lower()} with the legs to off-map stops)")
+    else:
+        print(f"     {shown}")
 
     width, height = poster_inches(trip)
     frame = fit(route.fit_coords(), width, height)
@@ -58,9 +64,9 @@ def build_poster(trip: Trip, peaks: bool = False) -> tuple[Poster, list[Found]]:
             "altitudes", lambda: altitudes(stop_points, ground, passes), (heights, None, None))
         if top_marker:
             passes.append(top_marker)
-    peak_list = optional("mountain peaks", lambda: fetch_peaks(frame.bbox()), []) if peaks else []
+    peak_list = optional("mountain peaks", lambda: fetch_peaks(frame.bbox()), [])
     for p in passes:
-        print(f"     ▲ {p.name}" + (f" {p.ele:,.0f} m" if p.ele else ""))
+        print(f"     ▲ {p.name}" + (f" {units.height(p.ele, trip.units).lower()}" if p.ele else ""))
     for f in found:
         print(f"     ● {f.wanted} ({f.how})")
 
@@ -71,7 +77,7 @@ def build_poster(trip: Trip, peaks: bool = False) -> tuple[Poster, list[Found]]:
     drawn_passes = [p for p in passes if not any(haversine_km((p.lon, p.lat), st) < STOP_PASS_KM for st in stop_points)]
     poster = Poster(frame=frame, features=features, roads=roads, sea=sea, route=route, stops=trip.stops,
                     stop_heights=heights, passes=drawn_passes, sights=sights, text=text, show=trip.show,
-                    peaks=peak_list, border=border_text(trip, passes))
+                    peaks=peak_list, border=border_text(trip, passes), units=trip.units, bleed=bleed_inches(trip))
     return poster, found
 
 
@@ -252,8 +258,9 @@ def trip_days(trip: Trip) -> int | None:
 
 
 def stats_line(trip: Trip, route: Route, passes: list, highest: float | None) -> str:
-    """'1,188 KM  ·  6 DAYS  ·  2 PASSES  ·  HIGHEST 4,551 M'; anything unknown is left out."""
-    parts = [f"{route.km:,.0f} KM"]
+    """'1,188 KM  ·  6 DAYS  ·  2 PASSES  ·  HIGHEST 4,551 M' (imperial: '738 MI … HIGHEST 14,931 FT');
+    anything unknown is left out."""
+    parts = [units.distance(route.on_map_km, trip.units)]
     days = trip_days(trip)
     if days:
         parts.append(f"{days} DAY{'S' if days != 1 else ''}")
@@ -261,7 +268,7 @@ def stats_line(trip: Trip, route: Route, passes: list, highest: float | None) ->
     if n_passes:
         parts.append(f"{n_passes} PASS{'ES' if n_passes != 1 else ''}")
     if highest:
-        parts.append(f"HIGHEST {highest:,.0f} M")
+        parts.append(f"HIGHEST {units.height(highest, trip.units)}")
     return SEP.join(parts)
 
 

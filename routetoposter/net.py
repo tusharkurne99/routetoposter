@@ -29,6 +29,10 @@ except ImportError:  # an install from before truststore was a dependency: Pytho
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 USER_AGENT = "routetoposter/0.2 (road-trip poster generator)"
 RETRY_STATUS = {429, 502, 503, 504}  # "busy" answers worth retrying
+# Saved downloads never go stale by default: roads and coastlines change over years, not weeks.
+# Set $ROUTETOPOSTER_CACHE_DAYS (e.g. 365) to download anything older again; 0 = keep forever.
+CACHE_DAYS: float | None = None
+CACHE_DAYS_ENV = "ROUTETOPOSTER_CACHE_DAYS"
 # Where requests report what they're doing ("router.project-osrm.org didn't answer; retrying in 3s").
 # build.py sets it around each step so its status line can show it; unset, nothing is reported.
 NOTICE: ContextVar = ContextVar("notice", default=None)
@@ -95,16 +99,46 @@ def cache_path(kind: str, key) -> Path:
     return cache_dir() / kind / f"{digest}.json"
 
 
+def cache_max_days() -> float | None:
+    """How many days a saved download counts as fresh: $ROUTETOPOSTER_CACHE_DAYS, else CACHE_DAYS
+    (None or 0 = forever). Roads, coastlines and passes hardly change, so the default is forever."""
+    value = os.environ.get(CACHE_DAYS_ENV, "").strip()
+    if not value:
+        return CACHE_DAYS
+    try:
+        days = float(value)
+    except ValueError:
+        raise UserError(f"{CACHE_DAYS_ENV} must be a number of days (0 = keep forever), not {value!r}.")
+    return days if days > 0 else None
+
+
+def is_fresh(path: Path) -> bool:
+    """Is the file saved and younger than cache_max_days()? (Its age is its modification time: a
+    download that is redone rewrites it.)"""
+    if not path.exists():
+        return False
+    days = cache_max_days()
+    return days is None or time.time() - path.stat().st_mtime < days * 86400
+
+
 def is_cached(kind: str, key) -> bool:
-    return cache_path(kind, key).exists()
+    return is_fresh(cache_path(kind, key))
 
 
 def cached_json(kind: str, key, produce):
-    """The cached value for `key`; on a miss, call `produce()`, save what it returns, and return it."""
+    """The cached value for `key`; on a miss, call `produce()`, save what it returns, and return it.
+    A saved value older than cache_max_days() is downloaded again, but if that fails the old one is
+    used: old map data beats no poster."""
     path = cache_path(kind, key)
-    if path.exists():
+    if is_fresh(path):
         return json.loads(path.read_text())
-    value = produce()
+    try:
+        value = produce()
+    except Exception as e:
+        if not path.exists():
+            raise
+        notice(f"couldn't refresh saved {kind} ({str(e).splitlines()[0] if str(e) else type(e).__name__}); using the old copy")
+        return json.loads(path.read_text())
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(value))
     return value
