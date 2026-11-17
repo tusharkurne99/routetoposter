@@ -58,7 +58,7 @@ def make_trip() -> Trip:
                   sights_nearby=[NearbySight("Fort Kochi"), NearbySight("Mattancherry Palace", kind="palace"),
                                  NearbySight("Cherai Beach", lat=10.14, lon=76.18)]),
              Stop("Munnar: hills", 10.08, 77.05, label=False),
-             Stop("Kochi", 9.93, 76.26)]
+             Stop("Kochi", 9.93, 76.26, route="flying")]
     return Trip(stops=stops, link="https://www.google.com/maps/dir/x", title="Kerala", dates="Dec 2026")
 
 
@@ -70,6 +70,7 @@ def test_trip_file_round_trip(tmp_path):
     assert trip.title == "Kerala" and trip.dates == "Dec 2026" and trip.subtitle == "auto"
     assert trip.stops[1].name == "Munnar: hills" and trip.stops[1].label is False
     assert trip.stops[0].sights_nearby == make_trip().stops[0].sights_nearby
+    assert [s.route for s in trip.stops] == [None, None, "flying"]
 
 
 def write_yaml(tmp_path, text: str) -> Path:
@@ -87,6 +88,8 @@ STOPS = "stops:\n  - {name: A, lat: 1, lon: 2}\n  - {name: B, lat: 3, lon: 4}\n"
     ("size: 13x16\n", "Choose one of"),
     ("dpi: high\n", "whole number"),
     ("show: {pases: true}\n", 'Did you mean "passes"'),
+    ("route: flyng\n", 'Did you mean "flying"'),
+    ("units: imperal\n", 'Did you mean "imperial"'),
 ])
 def test_mistakes_get_clear_messages(tmp_path, extra, message):
     with pytest.raises(UserError, match=message):
@@ -163,3 +166,26 @@ def test_runes_settings_round_trip(tmp_path):
     path = write_yaml(tmp_path, STOPS + "runes_left: Our own words\n")
     trip = load_trip(path, THEMES)
     assert (trip.runes_left, trip.runes_right) == ("Our own words", None)
+
+
+def test_units_setting(tmp_path):
+    assert load_trip(write_yaml(tmp_path, STOPS), THEMES).units == "metric"
+    assert load_trip(write_yaml(tmp_path, STOPS + "units: imperial\n"), THEMES).units == "imperial"
+
+
+def test_a_stop_route_is_how_you_got_there(tmp_path):
+    with pytest.raises(UserError, match="Did you mean \"sailing\""):
+        load_trip(write_yaml(tmp_path, "stops:\n  - {name: A, lat: 1, lon: 2}\n  - {name: B, lat: 3, lon: 4, route: saling}\n"), THEMES)
+    with pytest.raises(UserError, match="this is where you start"):
+        load_trip(write_yaml(tmp_path, "stops:\n  - {name: A, lat: 1, lon: 2, route: flying}\n  - {name: B, lat: 3, lon: 4}\n"), THEMES)
+
+
+def test_off_map_stops(tmp_path):
+    two_on = "stops:\n  - {name: A, lat: 1, lon: 2}\n  - {name: B, lat: 3, lon: 4}\n"
+    trip = load_trip(write_yaml(tmp_path, two_on + "  - {name: C, lat: 5, lon: 60, route: flying, off_map: true}\n"), THEMES)
+    assert [s.off_map for s in trip.stops] == [False, False, True]
+    with pytest.raises(UserError, match="two stops must be on the map"):
+        load_trip(write_yaml(tmp_path, "stops:\n  - {name: A, lat: 1, lon: 2}\n  - {name: B, lat: 3, lon: 4, off_map: true}\n"), THEMES)
+    path = tmp_path / "out.yaml"
+    write_trip(trip, path, [], THEMES)
+    assert load_trip(path, THEMES).stops[2].off_map is True

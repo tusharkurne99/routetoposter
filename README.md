@@ -57,6 +57,10 @@ You can also put the link on the command line, but then wrap it in **single quot
 straight line, which usually means OpenStreetMap is missing a road there (common near borders). If
 it's wrong, choose a nearby stop on a main road in Google Maps and make a new trip file.
 
+Each leg is routed on its own: by OSRM first, then by Valhalla if OSRM finds no road or has to move
+a stop more than 5 km to reach one, and as a straight line if neither works. Any of these is noted
+with `⚠` under the legs. A link copied in Google's flight mode starts the trip with `route: flying`.
+
 ## 4. Edit the trip file
 
 Open `trips/ladakh.yaml` in any text editor. Every setting has a comment saying what it does. The
@@ -70,11 +74,13 @@ ones you'll usually change:
 | `nights` (on each stop) | Nights you slept there. Decides the markers and the number of days. |
 | `sights_nearby` (on each stop) | Places you saw near that stop, e.g. `[Rezang La, Pangong Lake]` |
 | `theme` | One of 18 themes (`routetoposter themes` lists them) |
-| `size` | `8x10`, `12x16`, `18x24`, `24x36`, `A4`, `A3`, `A2`, `instagram`, `phone`, `wallpaper` |
+| `size` | `8x10`, `12x16`, `18x24`, `24x36`, `A4`, `A3`, `A2`, `instagram`, `phone`, `wallpaper`; `VP-18x24`, `VP-24x36` for Vistaprint (with their 0.25 in bleed on every side) |
 | `orientation` | `portrait` or `landscape` |
 | `dpi` | `150` screen, `300` print, `600` big print |
 | `format` | `png`, `pdf` or `svg` |
 | `map_detail` | `auto`, `more` or `less`: how many small roads are drawn |
+| `units` | `metric` (km, metres; the default) or `imperial` (miles, feet): distances, altitudes and the scale bar |
+| `route` | `driving` (follow the roads), `straight`, `flying` or `sailing`; also per stop, see below |
 | `show:` | Switches: stop labels, altitudes, passes, sights, river names, scale bar, arrows, stats line |
 
 A sight in `sights_nearby` can be written three ways:
@@ -91,6 +97,44 @@ If a name can't be found, it tells you and suggests the closest real names.
 
 Set `auto_sights: true` under `show:` to also add well-known monasteries, temples, forts and
 viewpoints along the route automatically.
+
+### Flights and boats
+
+A trip that isn't all road: put `route:` on a stop to say how you got **to** that stop. It
+overrides the `route` at the top for that one leg.
+
+```yaml
+stops:
+  - name: Quito
+  - name: Guayaquil                # driven (the top route: driving)
+  - name: Baltra
+    route: flying                  # a dashed arc with a plane
+  - name: Puerto Ayora
+    route: sailing                 # a dotted line
+```
+
+A sea crossing finds its own way round the land (from the OpenStreetMap coastline) and is drawn
+in smooth curves; to make it take another way, add stops with `via: true` out at sea. Passes, sights and the highest point are only looked for along
+the legs on land. Everything on the route is fitted on the poster, so a long flight makes the map
+zoom out to include it, unless that stop is `off_map`:
+
+### Far-away stops: `off_map`
+
+To keep the map on the road trip and only point at a far-away place (a flight out to an island),
+mark that stop `off_map: true`. The map is fitted to the other stops; the line to it heads off the
+edge in its true direction, with the place's name and distance where it leaves the map.
+
+```yaml
+  - name: Guayaquil
+  - name: Galápagos
+    route: flying
+    off_map: true
+    lat: -0.45
+    lon: -90.27
+```
+
+It works for any `route`, and for coming in as well as going out (put it first for "arrived from").
+At least two stops must stay on the map.
 
 ## 5. Check, preview, make
 
@@ -111,7 +155,20 @@ viewpoints along the route automatically.
 
 **The first run for a new area takes a few minutes**: it downloads the map, passes and altitudes
 from OpenStreetMap and other free services. Everything is saved in `cache/`, so later runs (another
-theme, size, title or nights) take seconds.
+theme, size, title or nights) take seconds. Map data is saved in squares and routes leg by leg, so
+moving or adding a stop only downloads what changed around it. Saved downloads never expire unless
+you set `ROUTETOPOSTER_CACHE_DAYS`; when a refresh fails, the old copy is used.
+
+While the map downloads, a progress bar shows the parts done and the time left. Parts that are all
+sea are skipped. When OpenStreetMap's main server is busy, backup servers are tried by themselves.
+
+Three optional environment variables:
+
+| Variable | What it does |
+|---|---|
+| `ROUTETOPOSTER_OVERPASS` | Your own OpenStreetMap (Overpass) servers instead of the usual ones, comma-separated, tried in that order, e.g. `https://my-server/api/interpreter` |
+| `ROUTETOPOSTER_CACHE` | A folder to save downloads in instead of `cache/` |
+| `ROUTETOPOSTER_CACHE_DAYS` | Download again anything saved more than this many days ago, e.g. `365`. Unset or `0`: keep forever (the default) |
 
 ## 6. The Pelennor Fields theme
 
@@ -148,7 +205,9 @@ runes_right: Over Kunzum La and home again
 Good to know:
 
 - The mountains are drawn where the land is high: on glaciers, and on named peaks of 1,000 m or
-  more. The first poster of a new area makes one extra small download for the peaks.
+  more, from OpenStreetMap, or from [Wikidata](https://www.wikidata.org) (fewer peaks, but the big
+  ones) when the OpenStreetMap servers don't answer. Peaks are looked up for every theme, so
+  switching to Pelennor Fields later downloads nothing.
 - Runes have no digits, so numbers are written out in words, and a letter the runes don't have
   is written with the closest rune (V with the F rune).
 - A long list of stops is set smaller to fit the border; very long ones lose their last names.
@@ -164,7 +223,13 @@ Good to know:
 | `⚠ Couldn't look up mountain passes / '<sight>' …` | OpenStreetMap's server is busy or unreachable. The poster is still made; run it again later to add them. |
 | `Couldn't find these sights … did you mean …?` | Use one of the suggested names, fix the spelling, add `lat`/`lon`, or remove the sight. |
 | `"titel" isn't a setting. Did you mean "title"?` | A typo in the trip file; the message names the setting. |
-| `OpenStreetMap servers are busy or unreachable` while downloading the map | Wait a few minutes and run it again; the parts already downloaded are kept. |
+| `OpenStreetMap servers are busy or unreachable` while downloading the map | Wait a few minutes and run it again; the parts already downloaded are kept. Or set `ROUTETOPOSTER_OVERPASS` to another server. |
+| `No road route found from A to B; drawn as a straight line` | OpenStreetMap has no road there. If you flew or took a boat, put `route: flying` or `route: sailing` on B. |
+| `A → B: … Used the Valhalla router instead.` | Just a note: OSRM couldn't route that leg. Check its distance against Google Maps. |
+| `Sailing A → B: …; drawn straight` | The way round the land couldn't be worked out. Run it again later, or add `via: true` stops at sea to steer it. |
+| `At least two stops must be on the map` | Too many stops are `off_map: true`; the map needs two to fit around. |
+| `… has 'route: …', but a stop's route is how you got there` | The first stop can't have a `route`: move it to the next stop. |
+| `Can't make a secure connection to …` | A company network or VPN is inspecting web traffic. Run `.venv/bin/pip install -e ".[dev]"` again (an older install lacks the fix for this), try off the VPN, or point `SSL_CERT_FILE` at a certificate file that includes your company's certificate. |
 
 ## 8. Examples
 
@@ -196,4 +261,4 @@ RouteToPoster is MIT-licensed: see `LICENSE`.
 - Map data © [OpenStreetMap](https://www.openstreetmap.org/copyright) contributors (ODbL).
 - Themes from [maptoposter](https://github.com/originalankur/maptoposter), MIT licence: see `themes/LICENSE`.
 - Fonts: [Jost](https://github.com/indestructible-type/Jost), IM Fell English, Uncial Antiqua and Noto Sans Runic, all under the SIL Open Font License: see `fonts/*/OFL.txt`.
-- Routing by [OSRM](https://project-osrm.org) and [Valhalla](https://github.com/valhalla/valhalla); altitudes from [Open-Meteo](https://open-meteo.com).
+- Routing by [OSRM](https://project-osrm.org) and [Valhalla](https://github.com/valhalla/valhalla); altitudes from [Open-Meteo](https://open-meteo.com); backup peaks from [Wikidata](https://www.wikidata.org).

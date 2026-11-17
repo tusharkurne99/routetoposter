@@ -1,0 +1,17 @@
+{
+  "name": "Costa Rica",
+  "description": "Deep navy, dull white roads, the route in flag red",
+  "bg": "#0C1B33",
+  "text": "#F2F4FA",
+  "gradient_color": "#0C1B33",
+  "water": "#060E1E",
+  "parks": "#10223D",
+  "road_motorway": "#C4C7CE",
+  "road_primary": "#AEB2BC",
+  "road_secondary": "#8E94A3",
+  "road_tertiary": "#666E82",
+  "road_residential": "#3E4862",
+  "road_default": "#3E4862",
+  "route": "#E0283E",
+  "water_line": "#060E1E"
+}

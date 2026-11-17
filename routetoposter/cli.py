@@ -83,7 +83,7 @@ def cmd_new(args) -> int:
     if link.mode not in ("driving", "flight"):
         print(f"Note: the link is for {link.mode}; the route is drawn along driving roads.")
     trip = Trip(stops=link.stops, link=link.url, title=default_title(link.stops),
-                route="straight" if link.mode == "flight" else "driving")
+                route="flying" if link.mode == "flight" else "driving")
     print(f"Found {len(trip.stops)} stops. Working out the route…")
     route = route_trip(trip.stops, trip.route)
     path = Path(args.output) if args.output else Path(f"{slug(trip.title)}.yaml")
@@ -137,8 +137,7 @@ def draw(trip: Trip, trip_path: Path, themes: list[str], preview: bool) -> list[
     """Build the poster once and draw it in each theme. Returns [(theme, saved file)].
     Files: posters/<trip file name>_<theme>_<size>.<format>, or for previews
     posters/previews/<trip file name>_<theme>.png. Each run overwrites the previous file."""
-    mountains = any(load_theme(name).get("style") == "pelennor_fields" for name in themes)
-    poster, _ = build_poster(trip, peaks=mountains)
+    poster, _ = build_poster(trip)
     out_dir = POSTER_DIR / "previews" if preview else POSTER_DIR
     out_dir.mkdir(parents=True, exist_ok=True)
     dpi = output_dpi(trip, poster.frame.width, poster.frame.height, preview)
