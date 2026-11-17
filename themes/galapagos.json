@@ -1,0 +1,19 @@
+{
+  "name": "Galápagos",
+  "description": "The island flag: sandy land, green roads, sea crossings in deep blue",
+  "bg": "#EFE6D6",
+  "text": "#123F7A",
+  "gradient_color": "#EFE6D6",
+  "water": "#D3E4EF",
+  "parks": "#DFE3CC",
+  "road_motorway": "#2F8A4C",
+  "road_primary": "#3F9A5A",
+  "road_secondary": "#68B07D",
+  "road_tertiary": "#94C7A1",
+  "road_residential": "#BCDCC3",
+  "road_default": "#A8D2B2",
+  "route": "#1E7F3A",
+  "route_sailing": "#0B4EA2",
+  "route_flying": "#1E7F3A",
+  "water_line": "#B7D0E0"
+}

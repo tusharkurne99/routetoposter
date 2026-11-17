@@ -1,0 +1,17 @@
+{
+  "name": "Ecuador",
+  "description": "Warm paper, roads from soft flag red to gold, the route in the flag's blue",
+  "bg": "#FBF7EC",
+  "text": "#1F3B6E",
+  "gradient_color": "#FBF7EC",
+  "water": "#D4DEE6",
+  "parks": "#EEE7D2",
+  "road_motorway": "#B5473F",
+  "road_primary": "#C9683B",
+  "road_secondary": "#D98F3E",
+  "road_tertiary": "#E3B456",
+  "road_residential": "#EDD38E",
+  "road_default": "#E8C778",
+  "route": "#034EA2",
+  "water_line": "#C1CFDA"
+}
