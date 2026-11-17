@@ -89,6 +89,7 @@ STOPS = "stops:\n  - {name: A, lat: 1, lon: 2}\n  - {name: B, lat: 3, lon: 4}\n"
     ("dpi: high\n", "whole number"),
     ("show: {pases: true}\n", 'Did you mean "passes"'),
     ("route: flyng\n", 'Did you mean "flying"'),
+    ("units: imperal\n", 'Did you mean "imperial"'),
 ])
 def test_mistakes_get_clear_messages(tmp_path, extra, message):
     with pytest.raises(UserError, match=message):
@@ -165,6 +166,11 @@ def test_runes_settings_round_trip(tmp_path):
     path = write_yaml(tmp_path, STOPS + "runes_left: Our own words\n")
     trip = load_trip(path, THEMES)
     assert (trip.runes_left, trip.runes_right) == ("Our own words", None)
+
+
+def test_units_setting(tmp_path):
+    assert load_trip(write_yaml(tmp_path, STOPS), THEMES).units == "metric"
+    assert load_trip(write_yaml(tmp_path, STOPS + "units: imperial\n"), THEMES).units == "imperial"
 
 
 def test_a_stop_route_is_how_you_got_there(tmp_path):

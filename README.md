@@ -74,11 +74,12 @@ ones you'll usually change:
 | `nights` (on each stop) | Nights you slept there. Decides the markers and the number of days. |
 | `sights_nearby` (on each stop) | Places you saw near that stop, e.g. `[Rezang La, Pangong Lake]` |
 | `theme` | One of 18 themes (`routetoposter themes` lists them) |
-| `size` | `8x10`, `12x16`, `18x24`, `24x36`, `A4`, `A3`, `A2`, `instagram`, `phone`, `wallpaper` |
+| `size` | `8x10`, `12x16`, `18x24`, `24x36`, `A4`, `A3`, `A2`, `instagram`, `phone`, `wallpaper`; `VP-18x24`, `VP-24x36` for Vistaprint (with their 0.25 in bleed on every side) |
 | `orientation` | `portrait` or `landscape` |
 | `dpi` | `150` screen, `300` print, `600` big print |
 | `format` | `png`, `pdf` or `svg` |
 | `map_detail` | `auto`, `more` or `less`: how many small roads are drawn |
+| `units` | `metric` (km, metres; the default) or `imperial` (miles, feet): distances, altitudes and the scale bar |
 | `route` | `driving` (follow the roads), `straight`, `flying` or `sailing`; also per stop, see below |
 | `show:` | Switches: stop labels, altitudes, passes, sights, river names, scale bar, arrows, stats line |
 
@@ -155,17 +156,19 @@ At least two stops must stay on the map.
 **The first run for a new area takes a few minutes**: it downloads the map, passes and altitudes
 from OpenStreetMap and other free services. Everything is saved in `cache/`, so later runs (another
 theme, size, title or nights) take seconds. Map data is saved in squares and routes leg by leg, so
-moving or adding a stop only downloads what changed around it.
+moving or adding a stop only downloads what changed around it. Saved downloads never expire unless
+you set `ROUTETOPOSTER_CACHE_DAYS`; when a refresh fails, the old copy is used.
 
 While the map downloads, a progress bar shows the parts done and the time left. Parts that are all
 sea are skipped. When OpenStreetMap's main server is busy, backup servers are tried by themselves.
 
-Two optional environment variables:
+Three optional environment variables:
 
 | Variable | What it does |
 |---|---|
 | `ROUTETOPOSTER_OVERPASS` | Your own OpenStreetMap (Overpass) servers instead of the usual ones, comma-separated, tried in that order, e.g. `https://my-server/api/interpreter` |
 | `ROUTETOPOSTER_CACHE` | A folder to save downloads in instead of `cache/` |
+| `ROUTETOPOSTER_CACHE_DAYS` | Download again anything saved more than this many days ago, e.g. `365`. Unset or `0`: keep forever (the default) |
 
 ## 6. The Pelennor Fields theme
 
@@ -202,7 +205,9 @@ runes_right: Over Kunzum La and home again
 Good to know:
 
 - The mountains are drawn where the land is high: on glaciers, and on named peaks of 1,000 m or
-  more. The first poster of a new area makes one extra small download for the peaks.
+  more, from OpenStreetMap, or from [Wikidata](https://www.wikidata.org) (fewer peaks, but the big
+  ones) when the OpenStreetMap servers don't answer. Peaks are looked up for every theme, so
+  switching to Pelennor Fields later downloads nothing.
 - Runes have no digits, so numbers are written out in words, and a letter the runes don't have
   is written with the closest rune (V with the F rune).
 - A long list of stops is set smaller to fit the border; very long ones lose their last names.
@@ -256,4 +261,4 @@ RouteToPoster is MIT-licensed: see `LICENSE`.
 - Map data © [OpenStreetMap](https://www.openstreetmap.org/copyright) contributors (ODbL).
 - Themes from [maptoposter](https://github.com/originalankur/maptoposter), MIT licence: see `themes/LICENSE`.
 - Fonts: [Jost](https://github.com/indestructible-type/Jost), IM Fell English, Uncial Antiqua and Noto Sans Runic, all under the SIL Open Font License: see `fonts/*/OFL.txt`.
-- Routing by [OSRM](https://project-osrm.org) and [Valhalla](https://github.com/valhalla/valhalla); altitudes from [Open-Meteo](https://open-meteo.com).
+- Routing by [OSRM](https://project-osrm.org) and [Valhalla](https://github.com/valhalla/valhalla); altitudes from [Open-Meteo](https://open-meteo.com); backup peaks from [Wikidata](https://www.wikidata.org).

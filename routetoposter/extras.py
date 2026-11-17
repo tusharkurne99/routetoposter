@@ -3,14 +3,15 @@ Passes and peaks come from small Overpass queries, auto sights (only when switch
 one; all three per square of a fixed world grid (net.grid_rows), so a shifted poster area only asks
 for the squares it adds. Altitudes come from the free Open-Meteo elevation API. Every lookup is cached.
 """
+import re
 import time
 from dataclasses import dataclass
 from urllib.parse import urlencode
 
 import numpy as np
 
-from .mapdata import OVERPASS_SLOTS, overpass, printable_name
-from .net import cached_json, fetch_json, grid_rows, inside, old_area_rows
+from .mapdata import DOWN_FOR, LIGHT_TIMEOUT, OVERPASS_SLOTS, overpass, printable_name
+from .net import CertificateProblem, cached_json, fetch_json, grid_rows, inside, notice, old_area_rows
 from .route import haversine_km
 
 KM_PER_DEG = 111.32
@@ -24,6 +25,9 @@ OPEN_METEO = "https://api.open-meteo.com/v1/elevation"
 ELEVATION_BATCH = 100  # coordinates per Open-Meteo request (its limit)
 CREST_TOLERANCE_M = 80  # the elevation grid can read a little under a pass's crest
 PEAK_MIN_M = 1000  # lower "peaks" are mostly hills on the plains
+# Peaks come from Wikidata when OpenStreetMap's Overpass servers don't answer: free, no key.
+WIKIDATA_SPARQL = "https://query.wikidata.org/sparql"
+WIKIDATA_PEAK_TYPES = ("wd:Q8502", "wd:Q207326", "wd:Q54050", "wd:Q8072")  # mountain, summit, hill, volcano
 
 Point = tuple[float, float]  # (lon, lat)
 
@@ -61,13 +65,14 @@ def fetch_passes(bbox: tuple[float, float, float, float]) -> list[Pass]:
 def _passes_in(square) -> list[list]:
     b = ",".join(f"{v:.4f}" for v in square)
     return [[printable_name(el.get("tags", {})), el["lon"], el["lat"], el.get("tags", {}).get("ele")]
-            for el in overpass(f'[out:json][timeout:120];node["mountain_pass"="yes"]["name"]({b});out;', patient=False)["elements"]
+            for el in overpass(f'[out:json][timeout:{LIGHT_TIMEOUT}];node["mountain_pass"="yes"]["name"]({b});out;', patient=False, light=True)["elements"]
             if printable_name(el.get("tags", {}))]
 
 
 def fetch_peaks(bbox: tuple[float, float, float, float]) -> list[tuple[float, float, float]]:
-    """(lon, lat, metres) of every mountain peak in the area that OpenStreetMap gives an altitude of
-    at least PEAK_MIN_M; the Pelennor Fields style draws mountain symbols on them."""
+    """(lon, lat, metres) of every mountain peak in the area that OpenStreetMap (or, failing that,
+    Wikidata) gives an altitude of at least PEAK_MIN_M; the Pelennor Fields style draws mountain
+    symbols on them."""
     rows = old_area_rows("peaks", bbox, lambda area: [[round(v, 4) for v in area], POI_VERSION])
     if rows is None:
         rows = grid_rows("peaks-grid", bbox, POI_GRID_DEG, [POI_VERSION], _peaks_in, OVERPASS_SLOTS)
@@ -75,10 +80,48 @@ def fetch_peaks(bbox: tuple[float, float, float, float]) -> list[tuple[float, fl
 
 
 def _peaks_in(square) -> list[list]:
+    """[lon, lat, metres] rows for one square: from OpenStreetMap, or Wikidata when no Overpass
+    server answers. Wikidata knows far fewer peaks (a Costa Rica square: 7 against OSM's 388), but
+    the big ones are there, and its answer is saved like OSM's, so the square isn't asked again."""
     b = ",".join(f"{v:.4f}" for v in square)
-    return [[el["lon"], el["lat"], ele]
-            for el in overpass(f'[out:json][timeout:120];node["natural"="peak"]["ele"]({b});out;', patient=False)["elements"]
+    if time.time() - _overpass_gave_up[0] < DOWN_FOR:  # failed for another square just now: don't wait again
+        return _wikidata_peaks(square)
+    try:
+        elements = overpass(f'[out:json][timeout:{LIGHT_TIMEOUT}];node["natural"="peak"]["ele"]({b});out;',
+                            patient=False, light=True)["elements"]
+    except CertificateProblem:
+        raise
+    except Exception as e:
+        _overpass_gave_up[0] = time.time()
+        notice(f"OpenStreetMap didn't answer ({str(e).splitlines()[0]}); asking Wikidata")
+        return _wikidata_peaks(square)
+    return [[el["lon"], el["lat"], ele] for el in elements
             if (ele := _parse_ele(el.get("tags", {}).get("ele"))) is not None and ele >= PEAK_MIN_M]
+
+
+_overpass_gave_up = [0.0]  # when no Overpass server answered a peaks query (a list: set from the download threads)
+
+
+def _wikidata_peaks(square) -> list[list]:
+    """[lon, lat, metres] of the mountains, summits and volcanoes Wikidata has in the square with an
+    altitude of at least PEAK_MIN_M (normalised to metres: psn)."""
+    s, w, n, e = square
+    query = f"""SELECT ?item ?coord ?ele WHERE {{
+  SERVICE wikibase:box {{ ?item wdt:P625 ?coord .
+    bd:serviceParam wikibase:cornerSouthWest "Point({w} {s})"^^geo:wktLiteral .
+    bd:serviceParam wikibase:cornerNorthEast "Point({e} {n})"^^geo:wktLiteral . }}
+  VALUES ?type {{ {" ".join(WIKIDATA_PEAK_TYPES)} }}
+  ?item wdt:P31 ?type ; p:P2044/psn:P2044/wikibase:quantityAmount ?ele .
+  FILTER(?ele >= {PEAK_MIN_M})
+}}"""
+    data = fetch_json(f"{WIKIDATA_SPARQL}?{urlencode({'query': query, 'format': 'json'})}", timeout=LIGHT_TIMEOUT)
+    rows, seen = [], set()
+    for b in data["results"]["bindings"]:
+        point = re.match(r"Point\(([-\d.eE]+) ([-\d.eE]+)\)", b["coord"]["value"])
+        if point and b["item"]["value"] not in seen:  # an item with two types or altitudes comes back twice
+            seen.add(b["item"]["value"])
+            rows.append([float(point[1]), float(point[2]), float(b["ele"]["value"])])
+    return rows
 
 
 def fetch_sight_candidates(bbox: tuple[float, float, float, float]) -> list[Sight]:

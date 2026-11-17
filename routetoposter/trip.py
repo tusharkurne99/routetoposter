@@ -15,10 +15,15 @@ SIZES = {  # name -> (width, height, unit), portrait
     "8x10": (8, 10, "in"), "12x16": (12, 16, "in"), "18x24": (18, 24, "in"), "24x36": (24, 36, "in"),
     "A4": (210, 297, "mm"), "A3": (297, 420, "mm"), "A2": (420, 594, "mm"),
     "instagram": (1080, 1350, "px"), "phone": (1179, 2556, "px"), "wallpaper": (2160, 3840, "px"),
+    # Vistaprint posters: the file is the trim size plus BLEED on every side (their poster guide's
+    # "document size": 18.5 x 24.5 in for an 18x24 print), and the edge is cut off after printing.
+    "VP-18x24": (18.5, 24.5, "in"), "VP-24x36": (24.5, 36.5, "in"),
 }
+BLEED = {"VP-18x24": 0.25, "VP-24x36": 0.25}  # inches cut off each edge; frames and edge text stay clear of it
 ORIENTATIONS = ("portrait", "landscape")
 FORMATS = ("png", "pdf", "svg")
 MAP_DETAILS = ("auto", "more", "less")
+UNITS = ("metric", "imperial")
 # How you travel. The trip's `route` is the default for every leg; a stop's own `route` (how you got
 # there) overrides it for that one leg, e.g. a flight or a ferry in the middle of a road trip.
 ROUTE_MODES = ("driving", "straight", "flying", "sailing")
@@ -79,6 +84,7 @@ class Trip:
     dpi: int = 300
     format: str = "png"
     map_detail: str = "auto"
+    units: str = "metric"  # metric = km and m; imperial = miles and feet
     route: str = "driving"
     runes_left: str | None = None  # pelennor_fields theme: the runes down the left edge (None = the theme's)
     runes_right: str | None = None  # ... and down the right edge
@@ -109,6 +115,7 @@ def write_trip(trip: Trip, path: Path, route_lines: list[str], themes: list[str]
         f"dpi: {trip.dpi}   # 150 = screen, 300 = print, 600 = big print (ignored for pixel sizes)",
         f"format: {trip.format}   # png | pdf | svg",
         f"map_detail: {trip.map_detail}   # auto | more | less  (how many small roads are drawn)",
+        f"units: {trip.units}   # metric = km and metres; imperial = miles and feet",
         f"route: {trip.route}   # driving = follow the roads; straight = straight lines; flying = arcs; sailing = dotted",
         "# runes_left: The road goes ever on and on   # pelennor_fields theme: runes down the left edge",
         "# runes_right: There and back again          # pelennor_fields theme: runes down the right edge",
@@ -224,6 +231,7 @@ def load_trip(path: Path, themes: list[str]) -> Trip:
     trip.dpi = _opt_int(raw, "dpi", minimum=50, maximum=1200) or trip.dpi
     trip.format = _choice(raw, "format", FORMATS, trip.format)
     trip.map_detail = _choice(raw, "map_detail", MAP_DETAILS, trip.map_detail)
+    trip.units = _choice(raw, "units", UNITS, trip.units)
     trip.route = _choice(raw, "route", ROUTE_MODES, trip.route)
     trip.runes_left = _opt_text(raw, "runes_left")
     trip.runes_right = _opt_text(raw, "runes_right")

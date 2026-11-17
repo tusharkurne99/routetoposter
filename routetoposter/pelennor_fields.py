@@ -8,7 +8,7 @@ this style has instead of maptoposter's fades and spaced title:
 - a double-ruled frame with runes in the border band, and a compass rose
 - edges darkened like an old sheet of paper
 - a title block: the title in runes, the title, subtitle, facts, and a footer with a scale bar
-  in kilometres and leagues
+  in kilometres (or miles) and leagues
 - a small note that translates the runes
 
 Sizes are in inches or points on a 12x16 in poster, multiplied by `s` like in render.py.
@@ -22,8 +22,9 @@ from matplotlib import colors as mcolors
 from matplotlib.collections import LineCollection, PolyCollection
 from matplotlib.textpath import TextPath
 
-from .layout import KM_PER_DEG, NICE_KM, Frame
+from .layout import KM_PER_DEG, Frame
 from .runes import number_words, to_runes
+from .units import scale_length
 
 OUTER, INNER = 0.18, 0.46  # the two frame rules, inches in from the poster edge
 LEAGUE_KM = 4.83  # three miles
@@ -52,10 +53,11 @@ class BorderText:
     right: str | None = None
 
 
-def layout(text, s: float) -> Layout:
+def layout(text, s: float, bleed: float = 0.0) -> Layout:
     """Stack the title block up from the inner frame rule: footer, facts, subtitle, title, the
-    title in runes. Empty lines take no room. Long titles are drawn smaller."""
-    inner = INNER * s
+    title in runes. Empty lines take no room. Long titles are drawn smaller. The frame rules are
+    measured from where the printer cuts (`bleed` in from the edge), so trimming can't clip them."""
+    inner = INNER * s + bleed
     n = max(len(text.title), 1)
     size = {"footer": 12 * s, "stats": 17 * s, "subtitle": 22 * s,
             "title": 55 * s * min(1.0, 14 / n), "title_runes": 26 * s * min(1.0, 16 / n)}
@@ -65,7 +67,7 @@ def layout(text, s: float) -> Layout:
     y["title"] = y["subtitle"] + (size["subtitle"] / 72 * 1.9 if text.subtitle else 0.1 * s)
     y["title_runes"] = y["title"] + size["title"] / 72 * 1.05
     map_bottom = y["title_runes"] + size["title_runes"] / 72 + 0.3 * s
-    return Layout(OUTER * s, inner, map_bottom, y, size)
+    return Layout(OUTER * s + bleed, inner, map_bottom, y, size)
 
 
 # ── mountains ────────────────────────────────────────────────────────────────────────────────────
@@ -227,21 +229,20 @@ def _title_block(fig, ax, poster, lay: Layout, ink: str, accent: str, fonts: dic
     ax.text(W - lay.inner - 0.3 * s, y["footer"], "© OpenStreetMap contributors", ha="right", va="baseline",
             color=ink, alpha=0.8, fontproperties=fp, zorder=11)
     if poster.show.scale_bar:
-        _scale_bar(ax, poster.frame, lay, ink, fonts, s)
+        _scale_bar(ax, poster.frame, lay, ink, fonts, s, poster.units)
 
 
-def _scale_bar(ax, frame: Frame, lay: Layout, ink: str, fonts: dict, s: float) -> None:
-    """A two-part scale bar (filled, open) labelled in kilometres and, roughly, leagues."""
-    km_per_inch = KM_PER_DEG / frame.k
-    km = max((n for n in NICE_KM if n / km_per_inch <= 1.6 * s), default=NICE_KM[0])
-    half = km / km_per_inch / 2
+def _scale_bar(ax, frame: Frame, lay: Layout, ink: str, fonts: dict, s: float, units: str) -> None:
+    """A two-part scale bar (filled, open) labelled in kilometres or miles and, roughly, leagues."""
+    length, number, word = scale_length(KM_PER_DEG / frame.k, 1.6 * s, units)
+    half = length / 2
     x, y, h = lay.inner + 0.34 * s, lay.y["footer"] + 0.22 * s, 0.08 * s
     ax.add_patch(plt.Rectangle((x, y), half, h, facecolor=ink, edgecolor=ink, linewidth=0.7 * s, zorder=11))
     ax.add_patch(plt.Rectangle((x + half, y), half, h, fill=False, edgecolor=ink, linewidth=0.7 * s, zorder=11))
-    leagues = max(1, round(km / LEAGUE_KM))
+    leagues = max(1, round(length * KM_PER_DEG / frame.k / LEAGUE_KM))
     fp = fonts["bold"].copy()
     fp.set_size(11 * s)
-    label = f"{km} km · about {number_words(leagues)} league{'s' if leagues != 1 else ''}"
+    label = f"{number} {'miles' if word == 'MI' else 'km'} · about {number_words(leagues)} league{'s' if leagues != 1 else ''}"
     ax.text(x, lay.y["footer"], label, ha="left", va="baseline", color=ink, fontproperties=fp, zorder=11)
 
 

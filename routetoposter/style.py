@@ -7,6 +7,7 @@ from matplotlib.ft2font import FT2Font
 
 from .errors import UserError
 from .net import PROJECT_ROOT
+from .trip import ROUTE_MODES
 
 THEME_DIR = PROJECT_ROOT / "themes"
 FONT_ROOT = PROJECT_ROOT / "fonts"
@@ -29,9 +30,11 @@ def list_themes() -> list[str]:
 
 
 def load_theme(name: str) -> dict:
-    """A theme's colours. Themes are maptoposter's files plus two keys: `route` (the route colour)
-    and `water_line` (rivers, for themes whose water colour is close to the background); both fall
-    back to sensible colours when missing."""
+    """A theme's colours. Themes are maptoposter's files plus a few keys: `route` (the route colour,
+    also the stop markers), `route_driving` / `route_straight` / `route_flying` / `route_sailing`
+    (that kind of leg, e.g. boat trips in the sea's colour; else `route`), and `water_line` (rivers,
+    for themes whose water colour is close to the background); all fall back to sensible colours
+    when missing."""
     path = THEME_DIR / f"{name}.json"
     if not path.exists():
         raise UserError(f"Unknown theme {name!r}. Available: {', '.join(list_themes())}")
@@ -41,6 +44,8 @@ def load_theme(name: str) -> dict:
         raise UserError(f"Theme {name!r} is missing colours: {', '.join(missing)}")
     theme.setdefault("gradient_color", theme["bg"])
     theme.setdefault("route", theme["text"])
+    for mode in ROUTE_MODES:
+        theme.setdefault(f"route_{mode}", theme["route"])
     theme.setdefault("water_line", theme["water"])
     return theme
 

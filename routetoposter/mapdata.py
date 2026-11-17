@@ -25,7 +25,7 @@ from shapely.geometry import LineString, Polygon, box
 from shapely.ops import linemerge, split, unary_union
 
 from .errors import UserError
-from .net import NOTICE, CertificateProblem, cache_path, fetch_json, grid_rows, old_area_rows
+from .net import NOTICE, CertificateProblem, cache_path, fetch_json, grid_rows, is_fresh, old_area_rows
 from .net import grid_squares as world_grid_squares
 
 OVERPASS = "https://overpass-api.de/api/interpreter"
@@ -44,6 +44,10 @@ BUSY = {429, 502, 503, 504}
 
 BUSY_PAUSES = (1, 2, 4, 8)  # the main server is often briefly busy ("504"); a quick retry usually works
 QUICK_BUSY_PAUSES = (2, 5)  # the same for optional details: fewer retries
+# Small lookups (passes, peaks: a few hundred points) answer in seconds when a server is well. One
+# that hasn't answered in LIGHT_TIMEOUT seconds is struggling, so the next server is asked; all of
+# them are, since each costs at most this long.
+LIGHT_TIMEOUT = 20
 KM_PER_DEG = 111.32
 
 # Road classes, most important first. OSM highway values not listed here are "default"
@@ -177,7 +181,13 @@ def fetch_features(bbox: Bbox, level: str, on_tile=None, sea: list | None = None
     missing = [sq for sq, part in parts.items() if part is None]
 
     def download(square: Bbox) -> dict:
-        part = classify(overpass(_features_query(square, level), notice=notice)["elements"])
+        try:
+            part = classify(overpass(_features_query(square, level), notice=notice)["elements"])
+        except Exception:
+            old = _saved_square(square, level, bbox, any_age=True)  # out of date, but better than no map
+            if old is None:
+                raise
+            return old
         _save_square(square, level, square, part)
         return part
 
@@ -212,12 +222,12 @@ def grid_squares(bbox: Bbox, level: str) -> list[Bbox]:
     return world_grid_squares(bbox, GRID_DEG[level])
 
 
-def _saved_square(square: Bbox, level: str, bbox: Bbox) -> dict | None:
+def _saved_square(square: Bbox, level: str, bbox: Bbox, any_age: bool = False) -> dict | None:
     """The saved features of a square, if the saved part of it covers the part this area needs.
     (Normally the whole square is saved; map data converted from an older format may cover only
-    part of a square.)"""
+    part of a square.) One older than net.cache_max_days() counts only with `any_age`."""
     path = cache_path("osm-grid", _square_key(square, level))
-    if not path.exists():
+    if not (path.exists() if any_age else is_fresh(path)):
         return None
     saved = json.loads(path.read_text())
     s, w, n, e = square
@@ -273,7 +283,7 @@ def _features_query(bbox: Bbox, level: str) -> str:
 out geom qt;"""
 
 
-def overpass(query: str, patient: bool = True, notice=None) -> dict:
+def overpass(query: str, patient: bool = True, notice=None, light: bool = False) -> dict:
     """Run an Overpass query. A busy main server is retried with short pauses; if it stays busy or
     can't be reached, the backup servers are tried. A server that doesn't accept a connection is
     skipped at once (`_reachable`). `notice(text)` is told what is happening ("waiting for …",
@@ -282,13 +292,18 @@ def overpass(query: str, patient: bool = True, notice=None) -> dict:
     patient=True (the map itself): long timeouts, four retries when busy, every backup.
     patient=False (passes, sights, coastline): short timeouts, two retries when busy, one backup,
     so a struggling server costs at most about 2½ minutes before the poster goes ahead without
-    that detail."""
+    that detail.
+    light=True (passes, peaks): LIGHT_TIMEOUT on every server, one quick retry when busy, every
+    backup; about a minute when all of them struggle."""
     say = notice or NOTICE.get() or (lambda text: None)
     body = urlencode({"data": query}).encode()
     main_timeout, backup_timeout = (300, 120) if patient else (90, 60)
     pauses = BUSY_PAUSES if patient else QUICK_BUSY_PAUSES
     main, *backups = overpass_servers()
     backups = backups if patient else backups[:1]
+    if light:
+        main_timeout = backup_timeout = LIGHT_TIMEOUT
+        pauses, backups = QUICK_BUSY_PAUSES[:1], overpass_servers()[1:]
     errors = []
     for pause in (*pauses, None):
         if not _reachable(main):

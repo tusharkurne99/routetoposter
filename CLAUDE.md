@@ -61,7 +61,7 @@ Pipeline (package `routetoposter/`):
 - `pelennor_fields.py` + `runes.py` — themes with `"style": "pelennor_fields"` get frame, runes
   border, ink mountains, compass and their own title block from here instead of render.py's fades
   and spaced title (render.py still draws map/route/markers/labels).
-- `style.py` — themes are `themes/*.json` (maptoposter format + optional `route`, `water_line`,
+- `style.py` — themes are `themes/*.json` (maptoposter format + optional `route`, `route_<mode>` (e.g. `route_sailing`), `water_line`,
   `style`, `fonts`); fonts ship in `fonts/`. New theme = new JSON file with `REQUIRED_COLOURS`.
 - `cli.py` — argparse subcommands. `sheet.py` — contact sheet for `--all-themes`.
 
@@ -75,7 +75,9 @@ Conventions:
   `mapdata.fetch_features`), so a shifted area only fetches new squares; `cache/areas.json` is the
   pre-grid per-area cache, still read via `old_area_rows`. Cache-key version constants
   (`POI_VERSION`, `LOOKUP_VERSION`, `FEATURES_VERSION`, `SAILING_VERSION`) must be bumped when results change.
-  `$ROUTETOPOSTER_CACHE` overrides the cache dir.
+  `$ROUTETOPOSTER_CACHE` overrides the cache dir. Entries never expire unless `$ROUTETOPOSTER_CACHE_DAYS`
+  is set (age = file mtime, `net.is_fresh`); a stale entry is re-downloaded, and kept if that fails.
+  Read saved files through `is_cached` / `is_fresh`, not `path.exists()`, so the limit applies.
 - Tests never hit the network: use `tests/data/*_link.txt`, `route: "straight"`, monkeypatched
   lookups. `tests/conftest.py` gives every test an empty cache dir of its own.
 - Style: dense docstrings explaining *why*, module-level tuned constants with comments, long lines
